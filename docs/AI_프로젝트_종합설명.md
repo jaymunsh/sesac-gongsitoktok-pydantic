@@ -402,6 +402,18 @@ score[id] = (1-w)/(60+rank_vec) + w/(60+rank_bm25)
 
 ## 7. 에이전트 영역 상세 ★핵심
 
+에이전트는 이 프로젝트의 핵심이다. **5개 에이전트가 전부 `agents.py` 한 파일에 모듈 레벨로 정의**되고, 각각 **모델 · 출력 스키마(`output_type`) · 지시문(`instructions`)** 셋으로 설정된다. 말투는 공통 `_PERSONA` 공유.
+
+| 에이전트 | 모델 | output_type | 지시문 요지 | _PERSONA |
+|---|---|---|---|---|
+| **router** | gpt-4o-mini | `RouterResult` | 의도 분류 + 검색쿼리 정제 + 재무·거시 플래그 + 기간 | 공유 |
+| **writer(qa)** | **gpt-5.1** | `QAResult` | 근거 안에서만 답 · 수치 콤마표기 · 기준 모호하면 되묻기 | 공유 |
+| **summary** | gpt-4o-mini | `SummaryResult` | 근거로 서술 요약 · 메타설명/추측 금지 | 공유 |
+| **verifier** | o4-mini | `VerificationResult` | 답이 근거에 충실한지 `grounded_score` 채점 | 제외* |
+| section_summary(빌드용) | gpt-4o-mini | (text) | 섹션 1묶음 → takeaway 요약(사전요약 빌드) | 공유 |
+
+\* verifier는 답을 "쓰는" 게 아니라 "채점"만 해서 말투 페르소나 불필요. 모델·임계값은 전부 `.env`/`config.py`로 조정.
+
 ### 7-1. 관용구 — "모듈 레벨 1회 정의 + retrieve-then-read"
 ```python
 # agents/agents.py — 모듈 로드 시 1회 생성(재사용)
@@ -606,6 +618,17 @@ summary 질문은 항상 `summary_<corp>`를 **먼저** 뒤지고, 결과가 안
 | 의존성 무게 | crewai(litellm 등 무거움) | pydantic-ai-slim(경량) | 설치·기동 가벼움 |
 
 → **핵심**: 같은 일(LLM→검증된 Pydantic 객체)을 **코드 1/3, 호출당 객체 0**으로. 6개 함수가 각각 Agent+Task+Crew를 **매 호출 재생성**하던 안티패턴이 **모듈 1회 정의·재사용**으로 바뀐 게 정량 차이의 핵심. (지연·비용은 LLM 호출이 좌우 → 프레임워크 교체로 직접 안 줆. 줄어드는 건 **코드·객체·의존성**)
+
+**리소스 측면(직관)** — 단순히 "코드가 줄었다"를 넘어:
+
+| 측면 | 기존 CrewAI | 재구축 PydanticAI | 직관적으로 |
+|---|---|---|---|
+| **호출당 객체 생성**(메모리·GC) | 함수마다 Agent+Task+Crew **3개 생성→폐기**. 한 턴이면 **~9개** 만들고 버림 | 모듈 싱글톤 **재사용 → 호출당 0개** | "매 질문마다 객체 ~9개 만들고 버리기" vs "0개" → 메모리·GC 부담↓ |
+| **프레임워크 코어** | crewai 풀 프레임워크(도구·메모리·litellm 번들) | pydantic-ai 코어 **≈36KB**(슬림)+필요 provider만 | 얇은 코어 |
+| **LLM 호출 경로** | 앱 → **litellm** → provider(한 겹 더) | 앱 → provider(네이티브) | 중간 레이어 한 겹 덜 |
+| **import·기동** | 무거운 deps → 느림 | 가벼움(agents import **≈0.68s**) | 첫 응답까지 빠름 |
+
+> **정직하게**: 정밀 CPU/RAM 벤치마크는 안 함(실행 자원의 대부분은 **LLM 호출=네트워크**라 프레임워크 영향이 작음). 프레임워크가 줄이는 건 **①객체 churn ②설치·코어 무게 ③호출 경로 ④cold start** — "정밀 수치"보다 **구조적 가벼움**으로 이해.
 
 ### 11-3b. 정직한 인정
 재구축하며 "고친" 것 중 일부는 **기존에도 있었고** 다시 만든 것이다: retrieve-then-read,
