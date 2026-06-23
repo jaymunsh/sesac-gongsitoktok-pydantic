@@ -527,6 +527,15 @@ flowchart TB
   </table>
 
   <h3>6-3. 하이브리드 검색 (진짜 하이브리드)</h3>
+  <div class="callout key"><b>BM25는 어떻게 점수를 매기나 (키워드 검색의 원리)</b><br>
+   "검색어가 이 문서에 얼마나 잘 맞나"를 <b>세 가지</b>로 계산한다:
+   <ol style="margin:8px 0 4px">
+     <li><b>단어 빈도(TF)</b> — 검색어가 문서에 <b>많이 나올수록 점수↑</b>. 단 너무 많으면 효과가 점점 둔해짐(포화).</li>
+     <li><b>희소성(IDF)</b> — <b>흔한 단어</b>("회사·것")는 가중치↓, <b>드문 단어</b>(<code>300,870,903</code>·"하만")는 가중치↑. 드문 핵심어가 진짜 신호니까.</li>
+     <li><b>문서 길이 보정</b> — 긴 문서는 단어가 많이 나오는 게 당연 → 길이로 정규화해 짧은 문서가 손해 안 보게.</li>
+   </ol>
+   한마디로 <b>"드문 핵심어가 · 짧은 문서에 · 적당히 나오면"</b> 높은 점수. 그래서 <b>정확 수치·고유명사·티커</b>에 강하고,
+   벡터(뜻) 검색이 놓치는 <b>"글자 그대로 일치"</b>를 잡아준다. (벡터=뜻, BM25=글자 → 둘을 합친 게 하이브리드)</div>
 <pre><span class="c"># rag/vectorstore.py::VectorStore.search (요지)</span>
 vec_ids  = coll.query(query_embeddings=[q], n_results=candidate_k, where=...)   <span class="c"># 벡터 후보</span>
 bm25_ids = 전체 코퍼스 BM25 top-k (지연 캐시, where 동일 적용)                   <span class="c"># 정답이 벡터 밖이어도 포착</span>
@@ -538,8 +547,9 @@ score[id] = (1-w)/(60+rank_vec) + w/(60+rank_bm25)
     <div class="box good"><h4>현재 — 진짜 하이브리드</h4><p class="sub">벡터 top-k <b>와</b> 전체 BM25 top-k의 <b>합집합</b>을 RRF 융합 → 한쪽에만 있어도 생존. 숫자 토큰(<code>300,870,903</code>) 보존 토크나이저</p></div>
   </div>
 
-  <h3 id="walk">6-4. End-to-End 워크스루 — "삼성전자 영업이익 알려줘"</h3>
-  <p>한 질문이 들어와서 답이 나가기까지 <b>실제 값으로</b> 따라가 본다.</p>
+  <h3 id="walk">6-4. End-to-End 워크스루 — 3가지 시나리오</h3>
+  <p>한 질문이 들어와서 답이 나가기까지 <b>실제 값으로</b> 따라가 본다. 질문 종류마다 <b>흐르는 길이 다르다</b>.</p>
+  <p class="steptitle">시나리오 A — 정확 수치 (재무 결합) · "삼성전자 영업이익 알려줘"</p>
   <ol class="deep">
     <li><b>요청</b> — <span class="d">React→Spring→FastAPI로
       <code>{roomId, companyContext:{corpCode:"00126380", corpName:"삼성전자"}, messages:[{role:"user", content:"삼성전자 영업이익 알려줘"}]}</code> 도착.
@@ -558,6 +568,27 @@ score[id] = (1-w)/(60+rank_vec) + w/(60+rank_bm25)
     <li><b>응답·보관</b> — <span class="d"><code>contract.to_v2</code>가 <code>answerText</code>+<code>sources[]</code>(rceptNo·dartUrl 포함)+
       <code>verification{verdict:"pass", groundedScore:1.0}</code>로 변환, SQLite 보관. 프론트는 "정확도 100%"와 출처 카드(+DART 링크)를 표시.</span></li>
   </ol>
+  <div class="callout note"><b>A 한 줄 흐름</b> &nbsp;질문 → 라우터(qa·재무ON) → <b>병렬</b>[corpus + <b>DART 정형재무</b>] → writer → 검증 → 응답. <b>정확 숫자는 RAG가 아니라 정형 API가 책임.</b></div>
+
+  <p class="steptitle">시나리오 B — 요약 (사전요약 트랙) · "삼성전자 사업 내용 요약해줘"</p>
+  <ol class="deep">
+    <li><b>라우터</b> — <span class="d">→ <code>intent=summary</code>, <code>search_query="사업 내용 반도체 디스플레이"</code>. 재무·거시 플래그 <b>OFF</b>(개념 질문).</span></li>
+    <li><b>사전요약 검색</b> — <span class="d">corpus·재무·거시를 <b>안 탄다.</b> 대신 <code>summary_&lt;삼성&gt;</code>에서 <b>완성 요약</b> top-8을 의미검색.
+      예: "DX/DS/SDC/Harman 부문…", "메모리 기술 리더십…". <span class="g">(사전요약이 없으면 corpus 실시간 RAG로 자동 폴백)</span></span></li>
+    <li><b>작성(summary · gpt-4o-mini)</b> — <span class="d">요약 조각들을 종합 → <code>"삼성전자는 DX·DS·SDC·Harman 등 부문으로 구성되며, 메모리·디스플레이 등 …"</code></span></li>
+    <li><b>검증·응답·보관</b> — <span class="d">출처는 요약 조각(섹션·rcept_no·dartUrl), verdict=pass, 보관.</span></li>
+  </ol>
+  <div class="callout note"><b>B 한 줄 흐름</b> &nbsp;질문 → 라우터(summary) → <b>summary_&lt;corp&gt; 1번 검색</b>(완성 요약) → writer → 응답. <b>병렬 결합 없이 빠르고 깔끔</b>(비싼 요약은 빌드때 끝남).</div>
+
+  <p class="steptitle">시나리오 C — 거시 결합 · "요즘 환율·금리 상황에서 삼성 실적 어때?"</p>
+  <ol class="deep">
+    <li><b>라우터</b> — <span class="d">→ <code>intent=qa</code>, <code>financial_relevant=true</code>, <b><code>macro_relevant=true</code></b>, <code>search_query="실적 매출 영업이익"</code>.</span></li>
+    <li><b>3중 병렬 결합</b> — <span class="d"><code>asyncio.gather</code>로 동시에: ⓐ corpus 검색 ⓑ <b>재무 결합</b>(DART) ⓒ <b>거시 결합</b>(ECOS) →
+      거시 스냅샷 예: <code>환율 1,535원 · 기준금리 2.5% · 국고채 3.81% · KOSPI …</code> <span class="d">(과거값은 날짜별 캐시).</span></span></li>
+    <li><b>작성</b> — <span class="d">공시 실적 + 거시 스냅샷을 <b>"같은 시점의 사실"</b>로 결합(‘환율 때문에~’ 같은 인과 단정은 피함).</span></li>
+    <li><b>응답</b> — <span class="d"><b><code>macroSnapshot</code> 필드가 채워져</b> 프론트에 거시 표가 함께 노출 + 출처 카드.</span></li>
+  </ol>
+  <div class="callout note"><b>C 한 줄 흐름</b> &nbsp;질문 → 라우터(qa·재무·<b>거시</b>ON) → <b>3중 병렬</b>[corpus + 재무 + <b>거시(ECOS)</b>] → writer → 응답. <b>거시 브랜치가 추가</b>되고 <code>macroSnapshot</code>이 따라붙는다.</div>
 </section>
 
 <!-- 7 -->

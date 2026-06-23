@@ -352,6 +352,14 @@ ChatResponse ── contract.to_v2 ──▶ ChatV2Response  +  storage.save_cha
 | verifier | LLM | o4-mini | `agents/agents.py` |
 
 ### 6-3. 하이브리드 검색 (진짜 하이브리드)
+
+**BM25는 어떻게 점수를 매기나** — "검색어가 이 문서에 얼마나 잘 맞나"를 세 가지로 계산:
+1. **단어 빈도(TF)**: 검색어가 많이 나올수록 점수↑(단, 너무 많으면 포화).
+2. **희소성(IDF)**: 흔한 단어("회사·것")는 가중치↓, 드문 단어(`300,870,903`·"하만")는 가중치↑.
+3. **문서 길이 보정**: 긴 문서는 단어가 많은 게 당연 → 길이로 정규화.
+
+→ 한마디로 **"드문 핵심어가 · 짧은 문서에 · 적당히 나오면"** 높은 점수. 그래서 **정확 수치·고유명사·티커**에 강하고, 벡터(뜻)가 놓치는 **글자 그대로 일치**를 잡는다. (벡터=뜻, BM25=글자 → 합친 게 하이브리드)
+
 ```python
 # rag/vectorstore.py::VectorStore.search (요지)
 vec_ids  = coll.query(query_embeddings=[q], n_results=candidate_k, where=...)  # 벡터 후보
@@ -364,14 +372,31 @@ score[id] = (1-w)/(60+rank_vec) + w/(60+rank_bm25)
 - **현재(진짜)**: 벡터 top-k **와** 전체 코퍼스 BM25 top-k의 **합집합**을 RRF로 융합 → 한쪽에만 있어도 생존.
 - 숫자 토큰(`300,870,903`)을 한 토큰으로 보존하는 토크나이저 + 날짜/kind 필터를 BM25에도 동일 적용.
 
-### 6-4. End-to-End 워크스루 — "삼성전자 영업이익 알려줘"
-한 질문이 들어와 답이 나가기까지 **실제 값으로** 따라간다.
+### 6-4. End-to-End 워크스루 — 3가지 시나리오
+한 질문이 들어와 답이 나가기까지 **실제 값으로** 따라간다. 질문 종류마다 **흐르는 길이 다르다.**
+
+**시나리오 A — 정확 수치(재무 결합) · "삼성전자 영업이익 알려줘"**
 1. **요청** — `{roomId, companyContext:{corpCode:"00126380",corpName:"삼성전자"}, messages:[{role:"user",content:"삼성전자 영업이익 알려줘"}]}` 도착. `X-Trace-Id` 있으면 Logfire 루트 span에 바인딩.
 2. **라우터(gpt-4o-mini)** → `RouterResult(intent=qa, financial_relevant=true, search_query="영업이익", out_of_scope=false)`. "영업이익"이라 **재무 플래그 ON**.
 3. **병렬 검색·결합**(`asyncio.gather`) — ⓐ corpus 하이브리드 검색, ⓑ 재무 결합이 DART `fnlttSinglAcnt(00126380)` 호출 → 연결 영업이익을 **score=1.0** citation으로 **맨 앞 배치**. quote: `"영업이익: 제 57 기 43,601,051,000,000 / 제 56 기 32,725,961,000,000 (단위 원, 연결, 2025 사업보고서 기준)"`, rcept_no=실제 접수번호.
 4. **작성(writer gpt-5.1)** → `"삼성전자 영업이익은 제 57 기 43,601,051,000,000원, 제 56 기 32,725,961,000,000원입니다."` (페르소나·콤마표기·근거 기수 그대로).
 5. **provenance 고정 + 검증** — 출처는 코드의 실제 근거(`citations[:5]`)로 고정. verifier(o4-mini) `grounded_score≈1.0` → 임계값으로 **verdict=pass**.
 6. **응답·보관** — `contract.to_v2`가 `answerText`+`sources[]`(rceptNo·dartUrl)+`verification{verdict:"pass",groundedScore:1.0}`로 변환, SQLite 보관. 프론트는 "정확도 100%"와 출처 카드(+DART 링크) 표시.
+> **A 흐름**: 질문 → 라우터(qa·재무ON) → **병렬**[corpus + DART 정형재무] → writer → 검증 → 응답. **정확 숫자는 정형 API가 책임.**
+
+**시나리오 B — 요약(사전요약 트랙) · "삼성전자 사업 내용 요약해줘"**
+1. **라우터** → `intent=summary`, `search_query="사업 내용 반도체 디스플레이"`. 재무·거시 플래그 **OFF**.
+2. **사전요약 검색** — corpus·재무·거시 **안 탐**. `summary_<삼성>`에서 **완성 요약** top-8 의미검색("DX/DS/SDC/Harman 부문…"). *(없으면 corpus 실시간 RAG 폴백)*
+3. **작성(summary gpt-4o-mini)** → 요약 조각 종합 → "삼성전자는 DX·DS·SDC·Harman 등 부문으로 구성되며…"
+4. **검증·응답·보관** — 출처는 요약 조각(섹션·rcept_no·dartUrl), verdict=pass.
+> **B 흐름**: 질문 → 라우터(summary) → **summary_<corp> 1번 검색** → writer → 응답. **병렬 결합 없이 빠르고 깔끔**(비싼 요약은 빌드때 끝).
+
+**시나리오 C — 거시 결합 · "요즘 환율·금리 상황에서 삼성 실적 어때?"**
+1. **라우터** → `intent=qa`, `financial_relevant=true`, **`macro_relevant=true`**, `search_query="실적 매출 영업이익"`.
+2. **3중 병렬 결합**(`asyncio.gather`) — ⓐ corpus ⓑ 재무(DART) ⓒ **거시(ECOS)** 동시에. 거시 예: `환율 1,535원·기준금리 2.5%·국고채 3.81%·KOSPI…` (과거값 날짜 캐시).
+3. **작성** — 공시 실적 + 거시 스냅샷을 **"같은 시점의 사실"**로 결합(인과 단정은 피함).
+4. **응답** — **`macroSnapshot` 채워져** 거시 표가 함께 노출 + 출처 카드.
+> **C 흐름**: 질문 → 라우터(qa·재무·**거시**ON) → **3중 병렬**[corpus + 재무 + **거시**] → writer → 응답. **거시 브랜치 추가** + `macroSnapshot` 노출.
 
 ---
 
