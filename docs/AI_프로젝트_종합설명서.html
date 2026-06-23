@@ -195,7 +195,7 @@ flowchart TB
     <tr><td><b>Contextual Retrieval</b></td><td>청크 앞에 <b>출처 문맥 한 줄</b>("[삼성 2024 사업보고서 매출]")을 붙여 임베딩 → 검색 정밀도↑(Anthropic 제안).</td></tr>
     <tr><td><b>청크(Chunk)</b></td><td>긴 문서를 검색·요약하기 좋게 자른 <b>작은 조각</b>(색인 카드).</td></tr>
     <tr><td><b>메타데이터</b></td><td>청크에 붙는 <b>꼬리표</b>(회사·기간·섹션·종류 등) — 필터·출처추적·랭킹에 사용.</td></tr>
-    <tr><td><b>provenance</b> (근거추적)</td><td>답의 각 주장이 <b>어느 원문에서 왔는지 되짚기</b>. 환각 억제·감사 → 금융권 필수.</td></tr>
+    <tr><td><b>provenance</b> (출처추적)</td><td>답의 각 문장·수치가 <b>어느 공시·섹션에서 왔는지 끝까지 되짚는 것</b>. "이 숫자 어디서 났어?"에 답할 수 있게 함 → 환각 억제·감사(금융권 필수). 본 프로젝트는 출처를 코드가 고정하고 화면에 출처 카드+DART 링크로 보여줌.</td></tr>
     <tr><td><b>정형재무 / XBRL</b></td><td>매출·영업이익처럼 <b>표준 태그로 기계가 읽는</b> 재무 수치. 본 프로젝트는 DART API로 직접 가져옴(RAG 아님).</td></tr>
     <tr><td><b>retrieve-then-read</b></td><td>검색은 <b>코드가 끝내고</b> 그 근거를 LLM 프롬프트에 넣어 읽게 하는 패턴(환각·비용·비결정성↓).</td></tr>
     <tr><td><b>접수번호(rcept_no)</b></td><td>DART 공시 1건의 <b>14자리 고유 식별자</b>(앞 8자리=접수일). 출처·원문 링크의 기준.</td></tr>
@@ -222,6 +222,24 @@ flowchart TB
     <tr><td><b>토큰</b> (token)</td><td>LLM이 글을 처리하는 단위(대략 단어 조각). 비용·길이 계산 기준.</td></tr>
     <tr><td><b>폴백</b> (fallback)</td><td>주 경로가 안 되면 <b>대체 경로</b>로 처리(예: 사전요약 없으면 corpus RAG로).</td></tr>
     <tr><td><b>v2.0 계약</b></td><td>백엔드(Spring)와 합의한 <b>요청/응답 규격</b>(필드명·구조). 어댑터가 내부 스키마와 번역.</td></tr>
+  </table>
+  <p class="steptitle">구현·기술 용어 (라이브러리·기법)</p>
+  <table>
+    <tr><th>용어</th><th>쉬운 뜻</th></tr>
+    <tr><td><b>asyncio / gather</b></td><td>파이썬 <b>비동기 동시 실행</b> 도구. 검색·재무·거시를 <b>동시에</b> 돌려 가장 느린 하나만 기다림(병렬). <code>gather</code>=여러 작업을 한 번에 모아 실행.</td></tr>
+    <tr><td><b>병렬 / 동시성</b></td><td>여러 작업을 (거의) 동시에 처리해 <b>전체 시간을 줄임</b>.</td></tr>
+    <tr><td><b>semaphore</b> (세마포어)</td><td>동시에 도는 작업 수를 <b>제한</b>하는 장치(예: 요약 LLM 호출을 8개까지만).</td></tr>
+    <tr><td><b>batch</b> (배치)</td><td>여러 항목을 <b>묶어 한 번에</b> 처리(예: 임베딩 256개씩) → 호출 수·비용↓.</td></tr>
+    <tr><td><b>output_type</b></td><td>에이전트 출력을 <b>정해진 스키마로 검증</b>(+실패 시 자동 재시도)하는 PydanticAI 기능.</td></tr>
+    <tr><td><b>deps</b> (의존성 주입)</td><td>에이전트에 벡터스토어·설정 등을 <b>타입 안전하게 넣어주는</b> 것.</td></tr>
+    <tr><td><b>stateless</b> (무상태)</td><td>서버가 상태를 안 가짐 → 같은 입력에 같은 출력. 대화이력은 백엔드가 보유해 매 요청에 넘김.</td></tr>
+    <tr><td><b>graceful</b> (부분실패 처리)</td><td>한 부분(예: 거시 결합)이 실패해도 <b>나머지로 계속</b> 진행해 답을 만든다.</td></tr>
+    <tr><td><b>TTL</b> (time to live)</td><td>캐시의 <b>유효 시간</b>. 지나면 새로 가져온다(예: 정형재무 캐시 개선안).</td></tr>
+    <tr><td><b>FastAPI / uvicorn</b></td><td>파이썬 <b>웹 API 프레임워크</b> / 그 API를 띄우는 <b>서버</b>.</td></tr>
+    <tr><td><b>BeautifulSoup / lxml</b></td><td>HTML·XML을 <b>트리로 파싱</b>하는 라이브러리(표-인식 파싱에 사용).</td></tr>
+    <tr><td><b>SQLite</b></td><td>파일 하나로 동작하는 <b>가벼운 데이터베이스</b>(분석 보관·거시 캐시).</td></tr>
+    <tr><td><b>venv</b></td><td>파이썬 <b>가상환경</b> — 프로젝트별 의존성 격리.</td></tr>
+    <tr><td><b>COLSPAN</b></td><td>표 셀이 <b>여러 열에 걸침</b>(병합). 파서가 빈 칸으로 패딩해 열 정렬을 유지.</td></tr>
   </table>
 </section>
 
