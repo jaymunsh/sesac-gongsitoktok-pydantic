@@ -414,6 +414,31 @@ score[id] = (1-w)/(60+rank_vec) + w/(60+rank_bm25)
 
 \* verifier는 답을 "쓰는" 게 아니라 "채점"만 해서 말투 페르소나 불필요. 모델·임계값은 전부 `.env`/`config.py`로 조정.
 
+**실제 코드 — 공통 페르소나 + 지시문** (`agents.py`, 축약):
+```python
+# 모든 답변이 공유하는 말투 규칙 (한 곳에서 정의)
+_PERSONA = "[역할·말투—공통] 정중한 존댓말 · 서론 없이 본론부터 · 이모지/느낌표 금지 · 사실 중심 …"
+
+def _m(name): return f"openai:{name}"     # 모델명 → provider 경로 (키는 .env)
+
+# ── 5개 에이전트: 모델 + output_type + (지시문 = _PERSONA + 고유지시) ──
+router_agent = Agent(_m(_s.router_model),          # gpt-4o-mini
+    output_type=RouterResult,
+    instructions=_PERSONA + "너는 라우터다. 의도(qa/summary/…)·검색쿼리·플래그를 정한다 …")
+
+qa_agent = Agent(_m(_s.qa_model),                  # gpt-5.1
+    output_type=QAResult,
+    instructions=_PERSONA + "너는 공시 분석가다. [근거]만 사용해 답한다. 수치는 콤마 표기 그대로 …")
+
+verifier_agent = Agent(_m(_s.verification_model),  # o4-mini
+    output_type=VerificationResult,
+    instructions="너는 검증자다. 답이 근거에 충실한지 grounded_score를 매긴다 …")  # _PERSONA 없음(채점만)
+
+# ── 호출 (services/chat.py) — 검색은 코드가 끝내고 근거를 프롬프트로 (retrieve-then-read) ──
+qa = (await qa_agent.run(f"[질문]\n{q}\n\n[근거]\n{evidence}")).output   # → QAResult (검증·자동재시도)
+```
+→ `_PERSONA + "고유지시"` 한 줄로 말투를 공유하고, `output_type`이 결과를 스키마로 검증. 말투를 바꾸려면 `_PERSONA` 한 곳만.
+
 ### 7-1. 관용구 — "모듈 레벨 1회 정의 + retrieve-then-read"
 ```python
 # agents/agents.py — 모듈 로드 시 1회 생성(재사용)
