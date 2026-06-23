@@ -864,7 +864,55 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
     <li><b>숫자 신선도</b>: 하드코딩 대신 <code>has_number</code>+<code>verdict</code>로 검증 → 새 보고서 나와도 안 썩음.</li>
   </ul>
 
-  <h3 id="log">12-2. 개발 일지 — 잡은 버그와 교훈</h3>
+  <h3>12-1. 어떤 기준으로 케이스를 구성하나</h3>
+  <p>각 케이스 = <b>질문(또는 검색쿼리) + 기대(expect) + 중요도(severity)</b>. JSON 한 줄로 추가·관리한다.</p>
+  <ul>
+    <li><b>중요도(severity)</b> — <code>must</code>=하드 통과 기준(하나라도 실패면 FAIL), <code>watch</code>=알려진 약점(미통과 허용, 추적용). 합격률은 must로만 집계.</li>
+    <li><b>케이스 선정</b> — ① 핵심 동작(요약·정확수치·스코프) ② 어려운 케이스(멀티턴·거시·표질의·되묻기·비교) ③ 약점 추적(watch). 회사는 삼성·현대 둘 다.</li>
+  </ul>
+  <p class="steptitle">기대(expect) — assertion 종류</p>
+  <table>
+    <tr><th>assertion</th><th>뜻</th></tr>
+    <tr><td><code>intent</code></td><td>라우터 분류가 기대와 같은지(qa/summary/smalltalk/out_of_scope)</td></tr>
+    <tr><td><code>contains_any</code></td><td>답·근거에 이 문자열 중 하나라도 포함(키워드/수치)</td></tr>
+    <tr><td><code>has_number</code></td><td>콤마 숫자 토큰 포함 여부(값은 안 고정 → 신선도)</td></tr>
+    <tr><td><code>verdict_not</code></td><td>이 verdict면 실패(예: <code>fail</code> 금지)</td></tr>
+    <tr><td><code>out_of_scope</code> / <code>macro_used</code> / <code>needs_clarification</code> / <code>no_citations</code></td><td>스코프 가드 / 거시 결합 / 되묻기 / 근거없음(스몰토크) 동작 확인</td></tr>
+    <tr><td><code>expect_any</code> (검색)</td><td>top-k 결과의 섹션·인용에 이 문구가 있으면 hit (hit@k·MRR 집계)</td></tr>
+  </table>
+  <p class="steptitle">실제 케이스 예시</p>
+<pre><span class="c">// 행동 평가 — 멀티턴 (history로 생략된 주어 해석)</span>
+{ "id": "multiturn-anaphora",
+  "company": {"corpCode":"00126380","corpName":"삼성전자"},
+  "history": [ {"role":"user","content":"삼성전자 영업이익 알려줘"},
+               {"role":"assistant","content":"…영업이익은 제57기 43,601,051,000,000원입니다."} ],
+  "question": "그럼 매출액은?",
+  "expect": { "intent":"qa", "has_number":true, "verdict_not":"fail" }, "severity": "must" }
+
+<span class="c">// 검색 평가 — 표-인식이 살린 부문 표</span>
+{ "id":"ss-ret-segment", "corp":"00126380", "query":"사업부문별 매출 DX DS 반도체",
+  "expect_any": ["DX 부문","DS 부문","부문별"], "severity":"must" }</pre>
+
+  <h3>12-2. 어떻게 실행·확인하나</h3>
+  <ul>
+    <li><b>인프로세스(서버 불필요)</b> — <code>handle_chat()</code>/<code>store.search()</code>를 직접 호출. 명령 한 줄로 돌린다.</li>
+    <li><b>검색 평가는 무료·결정적</b> — LLM 없이 임베딩+BM25만 → CI에서 매번 돌려도 부담 0. 행동·회귀는 LLM 사용(턴당 비용).</li>
+    <li><b>통과 기준</b> — must 전부 통과면 종료코드 0(CI 연동), watch는 분리 집계. 결과는 케이스별 PASS/FAIL/WATCH로 출력.</li>
+  </ul>
+<pre>PYTHONPATH=. .venv/bin/python -m eval.eval_retrieval     <span class="c"># 검색(무료·결정적)</span>
+PYTHONPATH=. .venv/bin/python -m eval.eval_chat          <span class="c"># 행동(어려운 케이스)</span>
+PYTHONPATH=. .venv/bin/python -m eval.run_golden_inproc  <span class="c"># 회귀(기존 골든)</span></pre>
+
+  <h3>12-3. 결과 (현재)</h3>
+  <table>
+    <tr><th>계층</th><th>케이스</th><th>결과</th></tr>
+    <tr><td>① 검색</td><td>13 (must 11 / watch 2)</td><td><b>must 11/11 hit@5(100%) · MRR 0.923</b></td></tr>
+    <tr><td>② 행동</td><td>8 (must 6 / watch 2)</td><td><b>must 6/6 · watch 2/2</b></td></tr>
+    <tr><td>③ 회귀(골든)</td><td>14 (must 12 / watch 2)</td><td><b>must 12/12 · watch 2/2</b></td></tr>
+  </table>
+  <p class="sub">사전요약 트랙 도입 후에도 회귀 없음(요약 케이스 전부 통과). 상세는 <code>eval/EVAL_README.md</code>.</p>
+
+  <h3 id="log">12-4. 개발 일지 — 잡은 버그와 교훈</h3>
   <p>코드가 지금 모양인 <b>이유</b>는 대개 이 버그들에서 왔다. 증상 → 원인 → 수정.</p>
   <table>
     <tr><th>증상</th><th>원인</th><th>수정 / 교훈</th></tr>

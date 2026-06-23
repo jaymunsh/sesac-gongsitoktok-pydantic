@@ -677,7 +677,56 @@ summary 질문은 항상 `summary_<corp>`를 **먼저** 뒤지고, 결과가 안
   안 걸리던 걸 발견 → 라우터에 **비교 질문** 규칙 추가해 수정(기존 골든은 순수 타사 질문이라 못 잡던 케이스).
 - **숫자 신선도**: 하드코딩 대신 `has_number`+`verdict`로 검증 → 새 보고서 나와도 안 썩음.
 
-### 12-2. 개발 일지 — 잡은 버그와 교훈
+### 12-1. 어떤 기준으로 케이스를 구성하나
+각 케이스 = **질문(또는 검색쿼리) + 기대(expect) + 중요도(severity)**. JSON 한 줄로 관리.
+- **중요도** — `must`=하드 통과 기준(하나라도 실패면 FAIL), `watch`=알려진 약점(미통과 허용·추적용). 합격률은 must로만 집계.
+- **선정** — ①핵심 동작(요약·정확수치·스코프) ②어려운 케이스(멀티턴·거시·표질의·되묻기·비교) ③약점 추적(watch). 삼성·현대 둘 다.
+
+**기대(expect) — assertion 종류**
+
+| assertion | 뜻 |
+|---|---|
+| `intent` | 라우터 분류가 기대와 같은지 |
+| `contains_any` | 답·근거에 이 문자열 중 하나 포함(키워드/수치) |
+| `has_number` | 콤마 숫자 토큰 포함(값 미고정 → 신선도) |
+| `verdict_not` | 이 verdict면 실패(예: `fail` 금지) |
+| `out_of_scope`/`macro_used`/`needs_clarification`/`no_citations` | 스코프가드/거시결합/되묻기/근거없음(스몰토크) 확인 |
+| `expect_any`(검색) | top-k 결과 섹션·인용에 이 문구 있으면 hit (hit@k·MRR) |
+
+**실제 케이스 예시**
+```jsonc
+// 행동 평가 — 멀티턴 (history로 생략된 주어 해석)
+{ "id":"multiturn-anaphora", "company":{"corpCode":"00126380","corpName":"삼성전자"},
+  "history":[{"role":"user","content":"삼성전자 영업이익 알려줘"},
+             {"role":"assistant","content":"…영업이익은 제57기 43,601,051,000,000원입니다."}],
+  "question":"그럼 매출액은?",
+  "expect":{"intent":"qa","has_number":true,"verdict_not":"fail"}, "severity":"must" }
+
+// 검색 평가 — 표-인식이 살린 부문 표
+{ "id":"ss-ret-segment", "corp":"00126380", "query":"사업부문별 매출 DX DS 반도체",
+  "expect_any":["DX 부문","DS 부문","부문별"], "severity":"must" }
+```
+
+### 12-2. 어떻게 실행·확인하나
+- **인프로세스(서버 불필요)** — `handle_chat()`/`store.search()` 직접 호출.
+- **검색 평가는 무료·결정적** — LLM 없이 임베딩+BM25 → CI 매번 가능. 행동·회귀는 LLM(턴당 비용).
+- **통과 기준** — must 전부 통과면 종료코드 0(CI), watch는 분리 집계. 케이스별 PASS/FAIL/WATCH 출력.
+```bash
+PYTHONPATH=. .venv/bin/python -m eval.eval_retrieval     # 검색(무료·결정적)
+PYTHONPATH=. .venv/bin/python -m eval.eval_chat          # 행동
+PYTHONPATH=. .venv/bin/python -m eval.run_golden_inproc  # 회귀
+```
+
+### 12-3. 결과 (현재)
+| 계층 | 케이스 | 결과 |
+|---|---|---|
+| ① 검색 | 13 (must 11 / watch 2) | **must 11/11 hit@5(100%) · MRR 0.923** |
+| ② 행동 | 8 (must 6 / watch 2) | **must 6/6 · watch 2/2** |
+| ③ 회귀(골든) | 14 (must 12 / watch 2) | **must 12/12 · watch 2/2** |
+
+사전요약 트랙 도입 후에도 회귀 없음(요약 케이스 전부 통과). 상세는 `eval/EVAL_README.md`.
+
+### 12-4. 개발 일지 — 잡은 버그와 교훈
 코드가 지금 모양인 **이유**는 대개 이 버그들에서 왔다. 증상 → 원인 → 수정.
 
 | 증상 | 원인 | 수정 / 교훈 |
