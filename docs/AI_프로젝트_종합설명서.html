@@ -607,8 +607,26 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
     <div class="callout key"><b>7-2. output_type</b><br><code>Agent(output_type=QAResult)</code>면 출력이 스키마로 <b>검증</b>되고 틀리면 <b>자동 재시도</b>. JSON 깨짐/필드 누락을 프레임워크가 막음.</div>
     <div class="callout key"><b>7-3. provenance 고정</b><br>에이전트가 인용을 못 지어내게, 출처는 <b>코드가 검색한 실제 근거</b>(<code>citations[:5]</code>)로 고정. 재무 정형수치가 앞에 배치돼 항상 포함.</div>
     <div class="callout key"><b>7-4. verifier 샘플링+임계값</b><br>검증 빈도는 <code>verify_sample_rate</code>(현재 1.0). verifier는 <code>grounded_score</code>만 매기고 <b>verdict는 코드가 임계값(0.7/0.4)으로 확정</b>(결정적).</div>
-    <div class="callout key"><b>7-5. 공통 페르소나</b><br>4개 에이전트가 <code>_PERSONA</code>(존댓말·차분·서론 금지·사실 중심) 공유 → 모델이 달라도 <b>말투 일정</b>. 수치는 출처 콤마 표기 그대로, 기수는 근거 명칭 그대로.</div>
+    <div class="callout key"><b>7-5. 공통 페르소나</b><br>4개 에이전트가 <code>_PERSONA</code>(존댓말·차분·서론 금지·사실 중심) 공유 → 모델이 달라도 <b>말투 일정</b>. 수치는 출처 콤마 표기 그대로, 기수는 근거 명칭 그대로. <small>(↓ 7-5-1 실제 내용)</small></div>
   </div>
+
+  <h3>7-5-1. 페르소나(말투)는 어떻게 설정했나</h3>
+  <p>말투가 제각각이던 문제(모델이 다르면 문체가 갈림)를 <b>하나의 공통 규칙</b>으로 묶었다. <code>agents.py</code>의 <code>_PERSONA</code> 상수:</p>
+<pre>_PERSONA = (
+  "[역할·말투 — 모든 답변 공통, 반드시 일관되게]
+   너는 'gongsitoktok' 공시 분석 어시스턴트다. 출력 문체는 항상 동일하게 유지한다:
+   - 정중한 존댓말. 서술='~합니다/입니다'체, 안내='~해 주세요'체로 통일.
+   - 차분·간결한 전문가 톤. 인사말·사과·자기언급('제가 보기엔')·서론 없이 <span class="k">본론부터</span>.
+   - 과장/홍보 수식어, 이모지, 구어체 감탄사('음','와','네!'), 느낌표 남발 금지.
+   - 1인칭('저는')·2인칭 호칭 없이 사실 중심으로 서술."
+)</pre>
+  <ol class="deep">
+    <li><b>어떻게 적용하나</b> — <span class="d">각 에이전트 정의에서 <b>지시문 앞에 붙인다</b>:
+      <code>instructions = _PERSONA + "(에이전트별 고유 지시)"</code>. router·writer(qa)·summary·section_summary가 공유한다
+      (verifier는 채점만 해서 제외). 그래서 <b>모델이 gpt-5.1이든 gpt-4o-mini든 같은 말투</b>가 나온다.</span></li>
+    <li><b>수치·기수 규칙은 따로</b> — <span class="d">writer/summary 지시에 추가로: "정확 수치는 <b>출처의 콤마 표기 그대로</b>(43,601,051원), '43조 6,010억' 같은 조/억 변환 금지. 기수는 근거에 적힌 명칭(제57기)을 그대로." → 답마다 숫자 표기가 흔들리던 것도 고정.</span></li>
+    <li><b>왜 한 곳에</b> — <span class="d">말투·역할·규칙을 바꾸려면 <code>_PERSONA</code> 한 곳만 고치면 전 에이전트에 일괄 반영. (기존 CrewAI는 backstory가 함수마다 흩어져 있어 일관성 맞추기 어려웠음 — §11·§16-4)</span></li>
+  </ol>
 
   <h3 id="multi">7-6. 복합·멀티턴 질문은 어떻게 처리되나</h3>
   <p>"한 번에 2가지를 묻거나", "이전에 물어본 걸 이어서 묻거나", "도중에 다른 트랙으로 바꿔 묻는" 경우의 처리.</p>
