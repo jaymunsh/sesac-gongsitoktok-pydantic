@@ -51,7 +51,7 @@
                     │                  │                         │
                     ▼                  ▼                         ▼
         corpus_<회사> · summary_<회사>  ┌──────────────┐    v2.0 응답 (보관·조회는 백엔드)
-              (Chroma)            │  FastAPI     │◀────────  Spring(finance_v2) ◀── React(gongsitoktok)
+              (Chroma)            │  FastAPI     │◀────────  Spring(gongsitoktok-spring) ◀── React(gongsitoktok-react)
                                   │ /api/v1/chat │           (AI=stateless 추론만)
                                   └──────────────┘
 ```
@@ -59,7 +59,7 @@
 - **데이터**: 삼성전자·현대자동차 정기보고서 → 회사별 벡터 컬렉션(`corpus_<corp_code>`)
 - **인제스트**(빌드 1회): 큰 비용이 여기 한 번. 표 보존·문맥 주입·임베딩.
 - **런타임**(질문당): 라우터 분류 → 검색/재무/거시 병렬 결합 → 작성 → 검증. 푼돈.
-- **연동**: React(프론트) ↔ Spring(백엔드 `finance_v2`) ↔ FastAPI(본 AI). v2.0 계약으로 통신.
+- **연동**: React(프론트) ↔ Spring(백엔드 `gongsitoktok-spring`) ↔ FastAPI(본 AI). v2.0 계약으로 통신.
 
 ### 1-2. 용어 한눈에 (Glossary)
 이 문서에 자주 나오는 용어. 모르는 단어가 보이면 여기로.
@@ -140,7 +140,7 @@
 | 보관 | SQLite (stdlib `sqlite3`) — `data/app.db` |
 | 관찰성 | Logfire 4 (콘솔 모드, 토큰 불필요) |
 | 외부 API | OpenDART(공시·정형재무, 무료), 한국은행 ECOS(거시, 무료), OpenAI(유료) |
-| 포트 | 8000 (백엔드 `finance_v2`가 `http://localhost:8000`로 호출) |
+| 포트 | 8000 (백엔드 `gongsitoktok-spring`가 `http://localhost:8000`로 호출) |
 
 ### 2-2. 모델 티어링 (역할별 모델 — `app/config.py`)
 | 역할 | 모델 | 이유 |
@@ -568,17 +568,17 @@ summary 질문은 항상 `summary_<corp>`를 **먼저** 뒤지고, 결과가 안
 ## 9. 백엔드 연동 — v2.0 계약 · X-Trace-Id
 
 ### 9-1. AI는 stateless — 책임 분리
-통합 구조에서 **AI(FastAPI)는 추론만 하는 stateless 서비스**다. 백엔드(Spring `finance_v2`)는 `POST /api/v1/chat` **하나만 호출**(`FastApiChatClient`)하고, 그 결과의 **보관·목록·상세(마이페이지)는 백엔드가 자체 DB(`QaHistory`)로 직접 처리**한다. 대화 세션·이력도 백엔드 소유.
+통합 구조에서 **AI(FastAPI)는 추론만 하는 stateless 서비스**다. 백엔드(Spring `gongsitoktok-spring`)는 `POST /api/v1/chat` **하나만 호출**(`FastApiChatClient`)하고, 그 결과의 **보관·목록·상세(마이페이지)는 백엔드가 자체 DB(`QaHistory`)로 직접 처리**한다. 대화 세션·이력도 백엔드 소유.
 
 | 책임 | 담당 |
 |---|---|
 | 추론(요약·근거 QA·검증) | **AI(FastAPI)** — `/api/v1/chat` (stateless) |
-| 보관·목록·상세(마이페이지) | **백엔드(finance_v2)** — `QaHistory` + 자체 DB |
+| 보관·목록·상세(마이페이지) | **백엔드(gongsitoktok-spring)** — `QaHistory` + 자체 DB |
 | 대화방·세션·인증 | **백엔드** |
 
-> **각주 — AI에도 `/api/analyses`가 있다**: 원래 standalone 도구(`gongsi-agent`)에서 포팅한 SQLite 보관/조회 엔드포인트(RFP "과제형" 충족 + AI 단독 실행용). **단 finance_v2 통합 시엔 백엔드가 보관을 담당하므로 호출되지 않음(중복).** AI의 SQLite는 통합 환경에선 주로 **거시(ECOS) 날짜 캐시**에 쓰인다.
+> **각주 — AI에도 `/api/analyses`가 있다**: 원래 standalone 도구(`gongsi-agent`)에서 포팅한 SQLite 보관/조회 엔드포인트(RFP "과제형" 충족 + AI 단독 실행용). **단 gongsitoktok-spring 통합 시엔 백엔드가 보관을 담당하므로 호출되지 않음(중복).** AI의 SQLite는 통합 환경에선 주로 **거시(ECOS) 날짜 캐시**에 쓰인다.
 
-### 9-2. v2.0 계약 (백엔드 `finance_v2` 드롭인 호환)
+### 9-2. v2.0 계약 (백엔드 `gongsitoktok-spring` 드롭인 호환)
 내부 스키마와 분리된 **camelCase 와이어 계약**을 `contract.py` 어댑터로 변환 → 백엔드 코드 수정 없이 연동.
 ```
 요청  ChatV2Request : { roomId, userSeq, companyContext:{corpCode,corpName}, messages:[{role,content}] }

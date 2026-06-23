@@ -149,7 +149,7 @@ flowchart TB
     direction LR
     RTR["라우터"] --> PAR{{"검색+재무+거시<br/>병렬"}} --> WR["작성"] --> VF["검증"]
   end
-  FE["React<br/>gongsitoktok"] <--> BE["Spring<br/>finance_v2"] <-->|v2.0 계약| API["FastAPI<br/>/api/v1/chat"]
+  FE["React<br/>gongsitoktok-react"] <--> BE["Spring<br/>gongsitoktok-spring"] <-->|v2.0 계약| API["FastAPI<br/>/api/v1/chat"]
 
   DART --> P1
   P4 --> VDB
@@ -178,7 +178,7 @@ flowchart TB
       회사별 벡터 컬렉션 <code>corpus_&lt;회사&gt;</code>에 적재한다. 비싼 작업(임베딩)은 빌드때 한 번만.</span></li>
     <li><b>런타임 평면 (질문당, 푼돈)</b> — <span class="d">질문이 오면 라우터가 분류하고, 검색+재무+거시를 <b>병렬</b>로 모아 작성·검증한다.
       정형 재무·거시는 <b>적재가 아니라 런타임에 API로 결합</b>(항상 최신).</span></li>
-    <li><b>서빙·연동 평면</b> — <span class="d">React 프론트(<code>gongsitoktok</code>) ↔ Spring 백엔드(<code>finance_v2</code>) ↔ 본 FastAPI가
+    <li><b>서빙·연동 평면</b> — <span class="d">React 프론트(<code>gongsitoktok-react</code>) ↔ Spring 백엔드(<code>gongsitoktok-spring</code>) ↔ 본 FastAPI가
       <b>v2.0 계약</b>으로 통신한다. <b>AI는 추론만(stateless)</b> 하고, 답의 <b>보관·마이페이지 조회는 백엔드</b>가 담당한다(§9).</span></li>
   </ol>
 
@@ -780,19 +780,19 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
 <section id="s9">
   <h2 class="sec"><span class="n">9</span>백엔드 연동 — v2.0 계약 · X-Trace-Id</h2>
   <h3>9-1. AI는 stateless — 책임 분리</h3>
-  <p>통합 구조에서 <b>AI(FastAPI)는 추론만 담당하는 stateless 서비스</b>다. 백엔드(Spring <code>finance_v2</code>)는
+  <p>통합 구조에서 <b>AI(FastAPI)는 추론만 담당하는 stateless 서비스</b>다. 백엔드(Spring <code>gongsitoktok-spring</code>)는
    <code>POST /api/v1/chat</code> <b>하나만 호출</b>하고(<code>FastApiChatClient</code>), 그 결과의 <b>보관·목록·상세(마이페이지)는
    백엔드가 자체 DB(<code>QaHistory</code>)로 직접 처리</b>한다. 대화 세션·이력도 백엔드 소유.</p>
   <table>
     <tr><th>책임</th><th>담당</th></tr>
     <tr><td>추론(요약·근거 QA·검증)</td><td><b>AI(FastAPI)</b> — <code>/api/v1/chat</code> (stateless, 같은 입력=같은 출력)</td></tr>
-    <tr><td>보관·목록·상세(마이페이지)</td><td><b>백엔드(finance_v2)</b> — <code>QaHistory</code> 엔티티 + 자체 DB</td></tr>
+    <tr><td>보관·목록·상세(마이페이지)</td><td><b>백엔드(gongsitoktok-spring)</b> — <code>QaHistory</code> 엔티티 + 자체 DB</td></tr>
     <tr><td>대화방·세션·인증</td><td><b>백엔드</b></td></tr>
   </table>
   <div class="callout note"><b>각주 — AI에도 <code>/api/analyses</code>가 있긴 하다</b>: 원래 standalone 도구(<code>gongsi-agent</code>)에서 포팅한
-   SQLite 보관/조회 엔드포인트로, RFP "과제형(보관·조회)" 문구 충족 + AI 단독 실행용이다. <b>단 finance_v2 통합 시엔 백엔드가
+   SQLite 보관/조회 엔드포인트로, RFP "과제형(보관·조회)" 문구 충족 + AI 단독 실행용이다. <b>단 gongsitoktok-spring 통합 시엔 백엔드가
    보관을 담당하므로 호출되지 않는다(중복).</b> AI의 SQLite는 통합 환경에선 주로 <b>거시(ECOS) 날짜 캐시</b>에 쓰인다.</div>
-  <h3>9-2. v2.0 계약 (백엔드 <code>finance_v2</code> 드롭인 호환)</h3>
+  <h3>9-2. v2.0 계약 (백엔드 <code>gongsitoktok-spring</code> 드롭인 호환)</h3>
   <p>내부 스키마와 분리된 <b>camelCase 와이어 계약</b>을 <code>contract.py</code> 어댑터로 변환 → 백엔드 코드 수정 없이 연동.</p>
 <pre><span class="k">요청</span>  ChatV2Request : { roomId, userSeq, companyContext:{corpCode,corpName}, messages:[{role,content}] }
 <span class="k">응답</span>  ChatV2Response: { roomId, intent, answerText, sourceContent, macroSnapshot,
