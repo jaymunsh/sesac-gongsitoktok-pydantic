@@ -648,14 +648,31 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
   <div class="callout note">저장소가 <b>2개로 분리</b>: <code>corpus_&lt;corp&gt;</code>(원문 청크·정확사실·QA) + <code>summary_&lt;corp&gt;</code>(사전요약·개요).
    <b>qa(정확수치)·재무·거시·verifier·v2.0 계약·보관은 그대로</b> — summary 트랙만 바뀐다. 폴백이 있어 점진 적용이 안전.</div>
 
-  <div class="callout warn"><b>"corpus 폴백"이 정확히 하는 일</b> — <code>summary_&lt;corp&gt;</code>가 비었을 때(그 회사 사전요약 미빌드),
-   <b>원문 청크에서 그 자리에서 요약을 새로 만든다</b>:
-   <ol style="margin:8px 0 4px">
-     <li><code>corpus_&lt;corp&gt;</code>에서 <b>원문 텍스트 청크</b>(<code>kind=text</code>)를 검색해 가져온다(완성 요약이 아니라 원문 그대로).</li>
-     <li>그 원문 청크들을 <code>summary_agent</code>에 근거로 넣어 <b>질의 시점에 요약을 생성</b>한다(= 사전요약 도입 <i>전</i>의 '실시간 RAG 요약').</li>
-   </ol>
-   즉 폴백은 "이미 만든 요약 꺼내쓰기"가 아니라 <b>"원문에서 즉석 요약"</b> — 더 느리고 비싸지만 사전요약이 없어도 항상 동작.
-   <b>두 경로 모두 최종 답은 summary_agent가 쓴다. 차이는 근거가 '완성 요약'(정상)이냐 '원문 청크'(폴백)냐.</b></div>
+  <h3>8-2-1. "corpus 폴백"이 정확히 하는 일 (상세)</h3>
+  <p>summary 질문이 들어오면 항상 <code>summary_&lt;corp&gt;</code>를 <b>먼저</b> 뒤진다. 거기서 결과가 안 나오면 corpus로 폴백한다.</p>
+  <ol class="deep">
+    <li><b>언제 발동하나 (정확한 조건)</b> — <span class="d"><code>search_summaries()</code>가 <b>빈 리스트</b>를 돌려줄 때만.
+      그건 곧 <code>summary_&lt;corp&gt;</code> <b>컬렉션이 없거나(미빌드) 비었을 때</b>다.
+      <b>주의</b>: 벡터 검색은 컬렉션에 데이터만 있으면 어떤 질문이든 <b>항상 top-k(가장 가까운 것)를 돌려준다</b>.
+      그래서 "질문에 딱 맞는 요약이 없어서"가 아니라 <b>"그 회사가 아직 사전요약 안 됨"</b>이 유일한 발동 조건이다.</span></li>
+    <li><b>무엇을 하나</b> — <span class="d"><code>corpus_&lt;corp&gt;</code>에서 <b>원문 텍스트 청크</b>(<code>kind=text</code> 필터) top-8을 검색해 가져온다.
+      이건 <b>완성 요약이 아니라 원문 그대로</b>다. → 그 원문 청크들을 <code>summary_agent</code>에 [근거]로 넣어
+      <b>질의 시점에 요약을 새로 생성</b>한다(= 사전요약 도입 <i>전</i>의 '실시간 RAG 요약' 방식).</span></li>
+    <li><b>왜 있나 (안전장치)</b> — <span class="d">점진 적용을 위해서다. 새 회사를 추가하고 <code>build_summaries</code>를 아직 안 돌렸어도
+      요약 질문이 <b>깨지지 않고 동작</b>한다(옛 방식으로라도). 사전요약을 켜고 끄는 게 자유롭다.</span></li>
+    <li><b>현재 상태</b> — <span class="d">삼성·현대 둘 다 빌드돼 있어 <b>폴백은 실제로 안 탄다</b> — 항상 사전요약을 쓴다. 폴백은 "보험".</span></li>
+    <li><b>트레이드오프</b> — <span class="d">폴백은 <b>매 질의마다 재검색+재요약</b>이라 느리고 비싸다(사전요약의 장점이 사라짐).
+      그래서 폴백은 어디까지나 비상용이고, 정상 경로(사전요약)가 빠르고 안정적이다.</span></li>
+  </ol>
+  <div class="callout key"><b>두 경로의 차이 = <code>summary_agent</code>에 넣는 [근거]가 무엇이냐</b> (최종 답은 둘 다 summary_agent가 쓴다)
+    <table style="margin:8px 0 0">
+      <tr><th></th><th>정상 (사전요약 트랙)</th><th>폴백 (corpus)</th></tr>
+      <tr><td>근거</td><td>이미 만든 <b>완성 요약</b> 조각</td><td><b>원문 텍스트 청크</b>(요약 안 됨)</td></tr>
+      <tr><td>요약 시점</td><td>빌드때 (미리, 1회)</td><td><b>질의때 (즉석, 매번)</b></td></tr>
+      <tr><td>summary_agent 역할</td><td>요약 조각 <b>종합·정리</b></td><td>원문에서 <b>요약 생성</b></td></tr>
+      <tr><td>속도·비용</td><td>빠름·쌈</td><td>느림·비쌈</td></tr>
+    </table>
+  </div>
 
   <h3>8-3. 효과</h3>
   <table>
@@ -747,6 +764,21 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
     <tr><td>LLM 레이어</td><td>litellm(파라미터 수동 제거)</td><td>provider 네이티브</td></tr>
     <tr><td>멀티에이전트 협업</td><td>안 씀(단일 래퍼로 전락)</td><td>동일 목적, 더 경량</td></tr>
   </table>
+
+  <h3>11-3. 정량 비교 (실측)</h3>
+  <p>"경량"이 얼마나 가벼워졌는지 코드 기준 실측치:</p>
+  <table>
+    <tr><th>지표</th><th>기존 CrewAI<br/><small>(crew.py)</small></th><th>재구축 PydanticAI<br/><small>(agents.py)</small></th><th>차이</th></tr>
+    <tr><td>에이전트 정의 코드량</td><td><b>448줄</b></td><td><b>144줄</b></td><td><b>약 1/3 (−68%)</b></td></tr>
+    <tr><td>호출(턴)당 생성되는 객체</td><td>Agent+Task+Crew <b>3개 재생성</b></td><td><b>0개</b> (모듈 싱글톤 재사용)</td><td>매 호출 객체 생성 제거</td></tr>
+    <tr><td>에이전트 1회 호출 코드</td><td>Agent+Task+Crew 정의 + kickoff + 결과 추출 <b>≈30줄</b></td><td><code>(await agent.run(prompt)).output</code> <b>1줄</b></td><td>호출부 대폭 축소</td></tr>
+    <tr><td>구조화 출력</td><td><code>output_pydantic</code> + 수동 <code>_as_pydantic</code> 추출</td><td><code>output_type</code> 네이티브 검증+<b>자동 재시도</b></td><td>추출 코드 제거 + 재시도 무료</td></tr>
+    <tr><td>LLM 레이어</td><td>litellm 경유(o4-mini 파라미터 수동 제거 필요)</td><td>provider 네이티브</td><td>중간 레이어 제거</td></tr>
+    <tr><td>의존성 무게</td><td>crewai(litellm 등 무거운 의존성 동반)</td><td>pydantic-ai-slim(경량)</td><td>설치·기동 가벼움</td></tr>
+  </table>
+  <div class="callout note"><b>핵심</b> — 같은 일(LLM→검증된 Pydantic 객체)을 <b>코드 1/3, 호출당 객체 생성 0</b>으로. 6개 함수가 각각 Agent+Task+Crew를
+   <b>매 호출 재생성</b>하던 안티패턴이, 모듈 레벨에서 <b>1회 정의·재사용</b>으로 바뀐 게 정량 차이의 핵심. (지연·비용은 LLM 호출이 좌우하므로 프레임워크 교체로 직접 줄진 않음 — 줄어드는 건 <b>코드·객체·의존성</b>)</div>
+
   <div class="callout warn"><b>정직한 인정</b> — "고친" 것 중 일부는 <b>기존에도 있었고</b> 다시 만든 것:
    retrieve-then-read, 인용 정본화(provenance, 기존 <code>_reconcile</code>), 임계값 verdict(기존 <code>_verdict_from_score</code>),
    재무·거시 결합. <b>사전요약 트랙은 기존에도 있었고, 재구축에서 (기본 단계로) 다시 구현</b>(§8). → 진짜 가치는 "없던 걸 만든 것"이 아니라
@@ -867,6 +899,37 @@ summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db</pre>
     <li><b>RouterResult</b>: intent·needs_evidence·financial_relevant·macro_relevant·out_of_scope·detected_company·reply·search_query·date_from·date_to·prefer_recent</li>
     <li><b>ChatV2Response</b>: roomId·intent·answerText·sourceContent·macroSnapshot·sources[]·outOfScope·detectedCompany·needsClarification·verification{verdict,groundedScore}·error</li>
   </ul>
+
+  <h3>16-4. 주요 파일별 상세 설명</h3>
+  <div class="callout key"><b>프롬프트(지시문)는 어디에? (기존 CrewAI의 role/goal/backstory 대응)</b><br>
+   기존 CrewAI는 함수마다 <code>Agent(role/goal/backstory)</code> + <code>Task(description)</code>로 프롬프트를 흩어 놨다.
+   재구축에선 <b>에이전트 지시문은 전부 <code>agents.py</code>의 <code>instructions=</code> + 공통 <code>_PERSONA</code></b>에 모였고,
+   <b>근거 조립(프롬프트에 넣을 [근거] 텍스트)은 <code>chat.py</code>·<code>agents.py::format_citations</code></b>에 있다.
+   → "말투·역할·규칙을 바꾸려면 <code>agents.py</code>만 보면 된다."</div>
+  <table>
+    <tr><th>파일</th><th>역할 · 핵심 함수/클래스</th></tr>
+    <tr><td><code>config.py</code></td><td>설정(모델·파라미터·경로). <code>Settings</code>/<code>get_settings()</code>. 모델명·임계값·청크크기 등 모든 튜닝 손잡이.</td></tr>
+    <tr><td><code>ingest/dart.py</code></td><td>OpenDART 연동. <code>fetch_document_xml</code>(태그 보존 raw XML), <code>fetch_financials</code>(정형재무), <code>list_disclosures</code>, <code>find_corp_code</code>.</td></tr>
+    <tr><td><code>ingest/parser.py</code></td><td>★표-인식 파싱. <code>parse_document</code>→<code>Block</code>. 표→Markdown, 섹션 경로 추적, 자간 정규화(<code>_despace</code>).</td></tr>
+    <tr><td><code>ingest/chunker.py</code></td><td>청킹. <code>chunk_blocks</code>. 본문 윈도우(<code>_window</code>)·표 헤더반복 분할(<code>_split_table</code>).</td></tr>
+    <tr><td><code>ingest/contextual.py</code></td><td>Contextual 문맥줄. <code>build_context_line</code>(결정적 템플릿)·<code>apply_context</code>.</td></tr>
+    <tr><td><code>ingest/pipeline.py</code></td><td>적재 오케스트레이션. <code>ingest_company</code>·<code>list_periodic</code>(정기보고서 목록).</td></tr>
+    <tr><td><code>rag/embedder.py</code></td><td>OpenAI 임베딩(배치 256). <code>embed_documents</code>·<code>embed_query</code>.</td></tr>
+    <tr><td><code>rag/vectorstore.py</code></td><td>★Chroma+BM25 하이브리드. <code>search</code>(RRF 융합), <code>index_chunks</code>, <code>search_summaries</code>/<code>index_summaries</code>, <code>has_disclosure</code>.</td></tr>
+    <tr><td><code>rag/rerank.py</code></td><td>후처리. <code>rerank</code>(중복제거 <code>dedup</code> + 최신우선).</td></tr>
+    <tr><td><b><code>agents/agents.py</code></b></td><td>★<b>4 에이전트 + <code>_PERSONA</code> + <code>section_summary_agent</code></b>. <b>모든 에이전트 지시문(=프롬프트)이 여기.</b> <code>format_citations</code>(근거 텍스트화).</td></tr>
+    <tr><td><code>agents/deps.py</code></td><td>의존성 주입. <code>Deps</code>(corp_code·company_name·store).</td></tr>
+    <tr><td><b><code>services/chat.py</code></b></td><td>★런타임 오케스트레이터. <code>handle_chat</code>(라우팅→병렬검색→작성→검증→폴백), <code>_retrieve</code>·<code>_verdict_of</code>·<code>_should_verify</code>.</td></tr>
+    <tr><td><code>services/financials.py</code></td><td>재무 결합(DART 정형). <code>fetch_financial_citations</code>(매출·영업이익 등을 Citation으로).</td></tr>
+    <tr><td><code>services/macro.py</code></td><td>거시 결합(ECOS). <code>get_macro</code>(날짜 캐시)·<code>format_macro</code>.</td></tr>
+    <tr><td><code>services/contract.py</code></td><td>v2.0 계약 어댑터. <code>to_internal</code>·<code>to_v2</code>(camelCase 번역).</td></tr>
+    <tr><td><code>services/summarize.py</code></td><td>★사전요약 빌더. <code>build_summary_chunks</code>(섹션 묶음 <code>_bundles</code>·가중 <code>_weight</code>·요약). <code>section_summary_agent</code> 프롬프트 사용.</td></tr>
+    <tr><td><code>data/ecos.py</code></td><td>한국은행 ECOS 클라이언트. <code>macro_snapshot</code>(환율·금리·KOSPI 통계코드).</td></tr>
+    <tr><td><code>api/routes.py</code></td><td>HTTP. <code>POST /api/v1/chat</code>(X-Trace-Id 바인딩·보관)·<code>GET /api/analyses</code>(목록·상세).</td></tr>
+    <tr><td><code>storage/db.py</code></td><td>SQLite. <code>save_chat</code>·<code>list_analyses</code>·<code>get_analysis</code>·거시 캐시.</td></tr>
+    <tr><td><code>observability.py</code></td><td>Logfire 콘솔. <code>setup_observability</code>·<code>request_span</code>(X-Trace-Id span 바인딩).</td></tr>
+    <tr><td><code>schemas/</code></td><td><code>ingest.py</code>(Block·Chunk·ChunkMeta)·<code>disclosure.py</code>(RouterResult·QAResult·Citation 등)·<code>external.py</code>(v2.0 계약).</td></tr>
+  </table>
 </section>
 
 <footer>

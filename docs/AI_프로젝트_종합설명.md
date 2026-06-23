@@ -463,17 +463,22 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   # 에이�
 - 저장소 **2개 분리**: `corpus_<corp>`(원문·정확사실·QA) + `summary_<corp>`(사전요약·개요).
 - **qa(정확수치)·재무·거시·verifier·v2.0 계약·보관은 그대로** — summary 트랙만 바뀐다. 폴백이 있어 점진 적용 안전.
 
-**"corpus 폴백"이 정확히 하는 일** — `summary_<corp>`가 비었을 때(그 회사 사전요약 미빌드), **원문 청크에서 그 자리에서 요약을 새로 만든다**:
-1. `corpus_<corp>`에서 **원문 텍스트 청크**(`kind=text`)를 검색(완성 요약이 아니라 원문 그대로).
-2. 그 원문 청크들을 `summary_agent`에 근거로 넣어 **질의 시점에 요약 생성**(= 사전요약 도입 *전*의 '실시간 RAG 요약').
+#### 8-2-1. "corpus 폴백"이 정확히 하는 일 (상세)
+summary 질문은 항상 `summary_<corp>`를 **먼저** 뒤지고, 결과가 안 나오면 corpus로 폴백한다.
+1. **언제 발동(정확한 조건)** — `search_summaries()`가 **빈 리스트**를 돌려줄 때만 = `summary_<corp>` **컬렉션이 없거나(미빌드) 비었을 때**. 벡터 검색은 데이터만 있으면 어떤 질문이든 **항상 top-k를 반환**하므로, "질문이 안 맞아서"가 아니라 **"그 회사가 아직 사전요약 안 됨"**이 유일한 발동 조건.
+2. **무엇을 하나** — `corpus_<corp>`에서 **원문 텍스트 청크**(`kind=text`) top-8 검색(완성 요약이 아닌 원문 그대로) → `summary_agent`에 [근거]로 넣어 **질의 시점에 요약 생성**(= 사전요약 도입 *전*의 '실시간 RAG 요약').
+3. **왜 있나(안전장치)** — 점진 적용용. 새 회사 추가 후 `build_summaries` 전에도 요약이 **안 깨지고 동작**.
+4. **현재 상태** — 삼성·현대 둘 다 빌드돼 **폴백은 실제로 안 탐**(항상 사전요약). 폴백은 "보험".
+5. **트레이드오프** — 폴백은 **매 질의 재검색+재요약**이라 느리고 비쌈(사전요약 장점 사라짐). 정상 경로가 빠르고 안정적.
 
-→ 폴백은 "이미 만든 요약 꺼내쓰기"가 아니라 **"원문에서 즉석 요약"** — 더 느리고 비싸지만 사전요약 없어도 항상 동작.
+**두 경로의 차이 = `summary_agent`에 넣는 [근거]가 무엇이냐** (최종 답은 둘 다 summary_agent가 씀):
 
-| | 정상(사전요약) | 폴백(corpus) |
+| | 정상(사전요약 트랙) | 폴백(corpus) |
 |---|---|---|
-| summary_agent에 넣는 근거 | 이미 만든 **완성 요약** 조각 | **원문 텍스트 청크** |
-| 요약 시점 | 빌드때(미리) | **질의때(즉석)** |
-| 최종 답 | summary_agent가 종합 | summary_agent가 요약 생성 |
+| 근거 | 이미 만든 **완성 요약** 조각 | **원문 텍스트 청크**(요약 안 됨) |
+| 요약 시점 | 빌드때(미리, 1회) | **질의때(즉석, 매번)** |
+| summary_agent 역할 | 요약 조각 **종합·정리** | 원문에서 **요약 생성** |
+| 속도·비용 | 빠름·쌈 | 느림·비쌈 |
 
 ### 8-3. 효과
 | 항목 | 효과 |
@@ -573,7 +578,21 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   # 에이�
 → 기존은 "구조화 출력 한 번 뽑으려 무거운 팀협업 프레임워크를 단일에이전트로 쓴 것". 교체 이득은
 **기능이 아니라 무게·관용구·유지보수성**.
 
-### 11-3. 정직한 인정
+### 11-3. 정량 비교 (실측)
+"경량"이 얼마나 가벼워졌는지 코드 기준 실측:
+
+| 지표 | 기존 CrewAI (crew.py) | 재구축 PydanticAI (agents.py) | 차이 |
+|---|---|---|---|
+| 에이전트 정의 코드량 | **448줄** | **144줄** | **약 1/3 (−68%)** |
+| 호출(턴)당 생성 객체 | Agent+Task+Crew **3개 재생성** | **0개**(모듈 싱글톤 재사용) | 매 호출 객체 생성 제거 |
+| 에이전트 1회 호출 코드 | 정의+kickoff+추출 **≈30줄** | `(await agent.run(prompt)).output` **1줄** | 호출부 대폭 축소 |
+| 구조화 출력 | `output_pydantic`+수동 `_as_pydantic` | `output_type` 네이티브 검증+**자동 재시도** | 추출 제거 + 재시도 무료 |
+| LLM 레이어 | litellm 경유(파라미터 수동 제거) | provider 네이티브 | 중간 레이어 제거 |
+| 의존성 무게 | crewai(litellm 등 무거움) | pydantic-ai-slim(경량) | 설치·기동 가벼움 |
+
+→ **핵심**: 같은 일(LLM→검증된 Pydantic 객체)을 **코드 1/3, 호출당 객체 0**으로. 6개 함수가 각각 Agent+Task+Crew를 **매 호출 재생성**하던 안티패턴이 **모듈 1회 정의·재사용**으로 바뀐 게 정량 차이의 핵심. (지연·비용은 LLM 호출이 좌우 → 프레임워크 교체로 직접 안 줆. 줄어드는 건 **코드·객체·의존성**)
+
+### 11-3b. 정직한 인정
 재구축하며 "고친" 것 중 일부는 **기존에도 있었고** 다시 만든 것이다: retrieve-then-read,
 인용 정본화(provenance, 기존 `_reconcile`), 임계값 verdict(기존 `_verdict_from_score`), 재무·거시 결합,
 날짜필터. **사전요약 트랙은 기존에도 있었고, 재구축에서 (기본 단계로) 다시 구현**(§8). → 재구축의 진짜 가치는
@@ -720,7 +739,35 @@ verify_pass_min 0.7 · verify_partial_min 0.4 · verify_sample_rate 1.0
 summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db
 ```
 
-### 16-4. 실행 치트시트
+### 16-4. 주요 파일별 상세 설명
+
+**프롬프트(지시문)는 어디에?** (기존 CrewAI의 role/goal/backstory 대응) — 기존 CrewAI는 함수마다 `Agent(role/goal/backstory)`+`Task(description)`로 프롬프트가 흩어져 있었다. 재구축에선 **에이전트 지시문이 전부 `agents.py`의 `instructions=` + 공통 `_PERSONA`**에 모였고, **근거 조립은 `chat.py`·`agents.py::format_citations`**에 있다. → "말투·역할·규칙을 바꾸려면 `agents.py`만 보면 된다."
+
+| 파일 | 역할 · 핵심 함수/클래스 |
+|---|---|
+| `config.py` | 설정(모델·파라미터·경로). `Settings`/`get_settings()` — 모든 튜닝 손잡이. |
+| `ingest/dart.py` | OpenDART. `fetch_document_xml`(태그보존 raw XML)·`fetch_financials`(정형재무)·`list_disclosures`. |
+| `ingest/parser.py` | ★표-인식 파싱. `parse_document`→`Block`. 표→Markdown·섹션경로·자간정규화(`_despace`). |
+| `ingest/chunker.py` | 청킹. `chunk_blocks`. 윈도우(`_window`)·표 헤더반복 분할(`_split_table`). |
+| `ingest/contextual.py` | Contextual 문맥줄. `build_context_line`(결정적)·`apply_context`. |
+| `ingest/pipeline.py` | 적재 오케스트레이션. `ingest_company`·`list_periodic`. |
+| `rag/embedder.py` | OpenAI 임베딩(배치 256). `embed_documents`·`embed_query`. |
+| `rag/vectorstore.py` | ★Chroma+BM25 하이브리드. `search`(RRF)·`index_chunks`·`search_summaries`·`has_disclosure`. |
+| `rag/rerank.py` | 후처리. `rerank`(중복제거 `dedup`+최신우선). |
+| **`agents/agents.py`** | ★**4 에이전트+`_PERSONA`+`section_summary_agent`. 모든 에이전트 지시문(=프롬프트)이 여기.** `format_citations`. |
+| `agents/deps.py` | 의존성 주입. `Deps`. |
+| **`services/chat.py`** | ★런타임 오케스트레이터. `handle_chat`(라우팅→병렬→작성→검증→폴백)·`_retrieve`·`_verdict_of`. |
+| `services/financials.py` | 재무 결합(DART 정형). `fetch_financial_citations`. |
+| `services/macro.py` | 거시 결합(ECOS). `get_macro`(날짜캐시)·`format_macro`. |
+| `services/contract.py` | v2.0 계약 어댑터. `to_internal`·`to_v2`. |
+| `services/summarize.py` | ★사전요약 빌더. `build_summary_chunks`(`_bundles`·`_weight`). `section_summary_agent` 사용. |
+| `data/ecos.py` | 한국은행 ECOS. `macro_snapshot`. |
+| `api/routes.py` | HTTP. `/api/v1/chat`(X-Trace-Id·보관)·`/api/analyses`. |
+| `storage/db.py` | SQLite. `save_chat`·`list_analyses`·거시 캐시. |
+| `observability.py` | Logfire 콘솔. `setup_observability`·`request_span`. |
+| `schemas/` | `ingest`(Block·Chunk·ChunkMeta)·`disclosure`(Router/QA/Citation…)·`external`(v2.0). |
+
+### 16-5. 실행 치트시트
 ```bash
 # 적재
 PYTHONPATH=. .venv/bin/python scripts/ingest_corpus.py --corp 삼성전자
