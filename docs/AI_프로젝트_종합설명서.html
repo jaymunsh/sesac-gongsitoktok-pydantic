@@ -141,8 +141,10 @@ flowchart TB
   subgraph ING["인제스트 · 빌드 1회"]
     direction LR
     P1["표-인식 파싱"] --> P2["청킹"] --> P3["Contextual 주입"] --> P4["임베딩"]
+    P1 --> P5["사전요약<br/>gpt-4o-mini"]
   end
-  VDB[("Chroma 벡터DB<br/>corpus_&lt;회사&gt;")]
+  VDB[("corpus_&lt;회사&gt;<br/>원문 청크")]
+  SDB[("summary_&lt;회사&gt;<br/>사전요약")]
   subgraph RT["런타임 · 질문당"]
     direction LR
     RTR["라우터"] --> PAR{{"검색+재무+거시<br/>병렬"}} --> WR["작성"] --> VF["검증"]
@@ -151,9 +153,11 @@ flowchart TB
 
   DART --> P1
   P4 --> VDB
+  P5 --> SDB
   DART -. 정형재무 .-> PAR
   ECOS -. 거시 .-> PAR
   VDB --> PAR
+  SDB -. 요약질문 .-> PAR
   API --> RTR
   VF --> API
   API -. 보관 .-> STO[("SQLite<br/>보관·조회")]
@@ -162,9 +166,9 @@ flowchart TB
   classDef code fill:#eafaf1,stroke:#0b9d6b,color:#1e2530;
   classDef store fill:#f5eefe,stroke:#7c3aed,color:#1e2530;
   classDef ext fill:#fdf6e3,stroke:#b7791f,color:#1e2530;
-  class RTR,WR,VF llm;
+  class RTR,WR,VF,P5 llm;
   class P1,P2,P3,P4,PAR code;
-  class VDB,STO store;
+  class VDB,SDB,STO store;
   class DART,ECOS,FE,BE ext;
 </div>
   <ol class="deep">
@@ -370,11 +374,18 @@ flowchart TB
   CX --> E["임베딩<br/>text-embedding-3-small (batch 256)"]
   E --> DB[("Chroma 색인<br/>corpus_&lt;corp&gt; · cosine")]
 
+  P -. 사전요약 분기 .-> SB["섹션 묶음 · 가중<br/><small>사업·위험·MD&amp;A 우선 / 표 제외</small>"]
+  SB --> SUM["gpt-4o-mini 요약<br/><small>takeaway 지시 · 빌드 1회</small>"]
+  SUM --> SE["임베딩"]
+  SE --> SDB[("summary_&lt;corp&gt;<br/>사전요약")]
+
   classDef code fill:#eafaf1,stroke:#0b9d6b,color:#1e2530;
+  classDef llm fill:#eef4ff,stroke:#2563eb,color:#1e2530;
   classDef store fill:#f5eefe,stroke:#7c3aed,color:#1e2530;
   classDef ext fill:#fdf6e3,stroke:#b7791f,color:#1e2530;
-  class P,T,B,C,CX,E code;
-  class DB store;
+  class P,T,B,C,CX,E,SB,SE code;
+  class SUM llm;
+  class DB,SDB store;
   class X ext;
 </div>
   <ol class="deep">
@@ -423,11 +434,13 @@ flowchart TB
 flowchart TB
   REQ["ChatV2Request (v2.0)"] --> ADP["contract.to_internal"] --> RTR["router_agent · gpt-4o-mini<br/><small>intent · search_query · 기간 · flag</small>"]
   RTR -->|smalltalk / out_of_scope| OUT["즉시 응답<br/><small>근거 불필요</small>"]
-  RTR -->|qa / summary| GA{{"asyncio.gather · 병렬<br/><small>부분실패 graceful</small>"}}
+  RTR -->|summary| SS["summary_&lt;corp&gt; 검색<br/><small>완성 요약 · 없으면 corpus 폴백</small>"]
+  RTR -->|qa| GA{{"asyncio.gather · 병렬<br/><small>부분실패 graceful</small>"}}
   GA --> C1["corpus 하이브리드 검색"]
   GA --> C2["재무 결합<br/><small>DART 정형 fnlttSinglAcnt</small>"]
   GA --> C3["거시 결합<br/><small>ECOS</small>"]
-  C1 --> WR["writer gpt-5.1<br/>또는 summary gpt-4o-mini<br/><small>근거 안에서만 작성</small>"]
+  SS --> WR["writer gpt-5.1<br/>또는 summary gpt-4o-mini<br/><small>근거 안에서만 작성</small>"]
+  C1 --> WR
   C2 --> WR
   C3 --> WR
   WR --> PRV["provenance 고정<br/><small>코드가 검색한 실제 근거 citations[:5]</small>"]
@@ -440,7 +453,7 @@ flowchart TB
   classDef code fill:#eafaf1,stroke:#0b9d6b,color:#1e2530;
   classDef store fill:#f5eefe,stroke:#7c3aed,color:#1e2530;
   class RTR,WR,VF llm;
-  class ADP,GA,C1,C2,C3,PRV,VD,RES code;
+  class ADP,GA,C1,C2,C3,SS,PRV,VD,RES code;
   class STO store;
 </div>
   <ol class="deep">

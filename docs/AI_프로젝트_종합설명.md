@@ -47,10 +47,11 @@
                     └──────────────────┬───────────────────────┘
    [인제스트(1회)]                     │                    [런타임(질문당)]
    표-인식 파싱→청킹→Contextual→임베딩   │     질문 → 라우터 → (검색+재무+거시 병렬) → 작성 → 검증
+   └ +사전요약(섹션 가중·gpt-4o-mini)    │            (summary 질문은 summary_<회사>에서)
                     │                  │                         │
                     ▼                  ▼                         ▼
-              Chroma 벡터DB     ┌──────────────┐          v2.0 응답 + SQLite 보관
-              corpus_<회사>     │  FastAPI     │◀────────  Spring(finance_v2) ◀── React(gongsitoktok)
+        corpus_<회사> · summary_<회사>  ┌──────────────┐         v2.0 응답 + SQLite 보관
+              (Chroma)            │  FastAPI     │◀────────  Spring(finance_v2) ◀── React(gongsitoktok)
                                 │ /api/v1/chat │
                                 └──────────────┘
 ```
@@ -261,6 +262,8 @@ Contextual 주입 (contextual.build_context_line) → text = "[문맥]\n원문"
 임베딩 (embedder, text-embedding-3-small, batch 256)
    ▼
 Chroma 색인 (vectorstore.index_chunks, corpus_<corp>, cosine)
+
+  └─[사전요약 분기]─ 섹션 묶음(가중) → gpt-4o-mini 요약(takeaway) → 임베딩 → summary_<corp>
 ```
 
 **표 보존 — before/after (가장 큰 품질 레버)**
@@ -281,14 +284,15 @@ ChatV2Request(v2.0)
    ▼
 [router_agent · gpt-4o-mini] ──▶ RouterResult(intent·search_query·기간·flag)
    ├── smalltalk / out_of_scope ──▶ 즉시 응답(근거 불필요)
-   │ qa / summary
-   ▼
-   asyncio.gather (병렬, 부분실패 graceful) ─────────────────────────┐
-     ├ corpus 하이브리드 검색 (vectorstore.search)                  │
-     ├ 재무 결합 (financials, financial_relevant일 때)             │
-     └ 거시 결합 (macro, macro_relevant일 때)                      │
-   ◀───────────────────── 근거 합치기(재무 우선) ───────────────────┘
-   ▼
+   ├── summary ──▶ summary_<corp> 검색(완성 요약, 없으면 corpus 폴백) ──┐
+   │ qa                                                                │
+   ▼                                                                   │
+   asyncio.gather (병렬, 부분실패 graceful) ─────────────────────────┐ │
+     ├ corpus 하이브리드 검색 (vectorstore.search)                  │ │
+     ├ 재무 결합 (financials, financial_relevant일 때)             │ │
+     └ 거시 결합 (macro, macro_relevant일 때)                      │ │
+   ◀───────────────────── 근거 합치기(재무 우선) ───────────────────┘ │
+   ▼ ◀─────────────────────────────────────────────────────────────────┘
 [writer qa_agent · gpt-5.1]  또는  [summary_agent · gpt-4o-mini]   ← 근거 안에서만 작성
    │  provenance = 코드가 검색한 실제 근거로 고정 (citations[:5])
    ▼
