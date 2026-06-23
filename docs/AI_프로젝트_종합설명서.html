@@ -93,7 +93,7 @@
   <a href="#s7" class="star">7 · 에이전트 영역</a>
   <a href="#multi" style="padding-left:20px;font-size:12.5px">· 복합·멀티턴 처리</a>
   <a href="#s8" class="star">8 · 요약 동작·활용</a>
-  <a href="#s9">9 · 보관/조회 + v2.0</a>
+  <a href="#s9">9 · 백엔드 연동(v2.0·Trace)</a>
   <a href="#s10">10 · 데이터 규모·실측</a>
   <a href="#s11">11 · 기존에서 바꾼 이유</a>
   <a href="#s12">12 · 3계층 eval</a>
@@ -160,7 +160,7 @@ flowchart TB
   SDB -. 요약질문 .-> PAR
   API --> RTR
   VF --> API
-  API -. 보관 .-> STO[("SQLite<br/>보관·조회")]
+  ECOS -. 날짜캐시 .-> STO[("SQLite<br/>거시 캐시")]
 
   classDef llm fill:#eef4ff,stroke:#2563eb,color:#1e2530;
   classDef code fill:#eafaf1,stroke:#0b9d6b,color:#1e2530;
@@ -179,7 +179,7 @@ flowchart TB
     <li><b>런타임 평면 (질문당, 푼돈)</b> — <span class="d">질문이 오면 라우터가 분류하고, 검색+재무+거시를 <b>병렬</b>로 모아 작성·검증한다.
       정형 재무·거시는 <b>적재가 아니라 런타임에 API로 결합</b>(항상 최신).</span></li>
     <li><b>서빙·연동 평면</b> — <span class="d">React 프론트(<code>gongsitoktok</code>) ↔ Spring 백엔드(<code>finance_v2</code>) ↔ 본 FastAPI가
-      <b>v2.0 계약</b>으로 통신한다. 답은 SQLite에 보관돼 목록·상세로 조회된다(과제형).</span></li>
+      <b>v2.0 계약</b>으로 통신한다. <b>AI는 추론만(stateless)</b> 하고, 답의 <b>보관·마이페이지 조회는 백엔드</b>가 담당한다(§9).</span></li>
   </ol>
 
   <h3 id="gloss">1-2. 용어 한눈에 (Glossary)</h3>
@@ -778,17 +778,20 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
 
 <!-- 9 -->
 <section id="s9">
-  <h2 class="sec"><span class="n">9</span>과제형 보관/조회 + v2.0 계약 연동</h2>
-  <h3>9-1. 과제형(RFP 1급): 요약→근거 QA→<b>보관→조회</b></h3>
-  <p>RFP는 "단순 챗봇"이 아니라 <b>답을 저장하고 나중에 다시 꺼내보는 과제형</b>을 요구한다. 그래서 챗 답을
-   DB에 쌓고, 목록·상세로 조회하는 엔드포인트를 둔다. (실제 구현: <code>storage/db.py</code> + <code>api/routes.py</code>)</p>
+  <h2 class="sec"><span class="n">9</span>백엔드 연동 — v2.0 계약 · X-Trace-Id</h2>
+  <h3>9-1. AI는 stateless — 책임 분리</h3>
+  <p>통합 구조에서 <b>AI(FastAPI)는 추론만 담당하는 stateless 서비스</b>다. 백엔드(Spring <code>finance_v2</code>)는
+   <code>POST /api/v1/chat</code> <b>하나만 호출</b>하고(<code>FastApiChatClient</code>), 그 결과의 <b>보관·목록·상세(마이페이지)는
+   백엔드가 자체 DB(<code>QaHistory</code>)로 직접 처리</b>한다. 대화 세션·이력도 백엔드 소유.</p>
   <table>
-    <tr><th>엔드포인트</th><th>하는 일</th><th>비유</th></tr>
-    <tr><td><code>POST /api/v1/chat</code></td><td>챗 한 턴 처리 + <b>근거 있는 답을 SQLite(<code>analyses</code> 테이블)에 자동 저장</b></td><td>질문하면 답하고 <b>기록을 남김</b></td></tr>
-    <tr><td><code>GET /api/analyses</code></td><td>저장된 분석들의 <b>목록</b> 반환(id·회사·제목·요약 한 줄·시각)</td><td>"내가 받은 분석들" <b>목록 화면</b>(프론트가 카드로 그림)</td></tr>
-    <tr><td><code>GET /api/analyses/{id}</code></td><td>분석 1건의 <b>상세</b>(질문·답·근거 출처·검증 점수)</td><td>목록에서 하나 눌러 <b>자세히 보기</b></td></tr>
+    <tr><th>책임</th><th>담당</th></tr>
+    <tr><td>추론(요약·근거 QA·검증)</td><td><b>AI(FastAPI)</b> — <code>/api/v1/chat</code> (stateless, 같은 입력=같은 출력)</td></tr>
+    <tr><td>보관·목록·상세(마이페이지)</td><td><b>백엔드(finance_v2)</b> — <code>QaHistory</code> 엔티티 + 자체 DB</td></tr>
+    <tr><td>대화방·세션·인증</td><td><b>백엔드</b></td></tr>
   </table>
-  <div class="callout note"><b>"마이페이지 카드"란</b> — 프론트(<code>gongsitoktok</code>)가 <code>GET /api/analyses</code> 결과를 마이페이지에 <b>카드 리스트</b>로 보여주는 화면을 가리킨 것(프론트 영역). AI는 <b>저장·조회 API</b>만 제공한다.</div>
+  <div class="callout note"><b>각주 — AI에도 <code>/api/analyses</code>가 있긴 하다</b>: 원래 standalone 도구(<code>gongsi-agent</code>)에서 포팅한
+   SQLite 보관/조회 엔드포인트로, RFP "과제형(보관·조회)" 문구 충족 + AI 단독 실행용이다. <b>단 finance_v2 통합 시엔 백엔드가
+   보관을 담당하므로 호출되지 않는다(중복).</b> AI의 SQLite는 통합 환경에선 주로 <b>거시(ECOS) 날짜 캐시</b>에 쓰인다.</div>
   <h3>9-2. v2.0 계약 (백엔드 <code>finance_v2</code> 드롭인 호환)</h3>
   <p>내부 스키마와 분리된 <b>camelCase 와이어 계약</b>을 <code>contract.py</code> 어댑터로 변환 → 백엔드 코드 수정 없이 연동.</p>
 <pre><span class="k">요청</span>  ChatV2Request : { roomId, userSeq, companyContext:{corpCode,corpName}, messages:[{role,content}] }
