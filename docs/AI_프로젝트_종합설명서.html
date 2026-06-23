@@ -59,6 +59,23 @@
   .ba .box{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card)}
   .ba .box.bad{border-top:3px solid #e06666}
   .ba .box.good{border-top:3px solid var(--accent2)}
+  /* 트러블슈팅 오답노트 카드 */
+  /* 트러블슈팅: 전체를 하나의 접이식(.tgroup)에 담고, 내부는 오답노트 카드(.tnote) */
+  details.tgroup{border:1px solid var(--line);border-radius:10px;background:var(--panel);margin:14px 0;padding:0 14px}
+  details.tgroup>summary{cursor:pointer;list-style:none;font-weight:700;color:var(--ink);font-size:14.5px;padding:13px 2px}
+  details.tgroup>summary::-webkit-details-marker{display:none}
+  details.tgroup>summary::before{content:"▸";color:var(--accent);font-weight:800;margin-right:9px;display:inline-block;width:11px}
+  details.tgroup[open]>summary::before{content:"▾"}
+  details.tgroup[open]>summary{border-bottom:1px solid var(--line);margin-bottom:6px}
+  details.tgroup>summary:hover{color:var(--accent)}
+  .tnote{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:2px 16px;margin:10px 0;background:var(--card)}
+  .tnote .sym{font-weight:800;color:#0f1420;font-size:15.5px;margin:0;padding:11px 0;border-bottom:2px solid #aeb8c7}
+  .tnote .sym .num{color:var(--accent);margin-right:7px}
+  .tnote p{margin:0;font-size:14px;line-height:1.6;padding:9px 0}
+  .tnote .cause{border-bottom:1px solid var(--line)}
+  .tnote .lc,.tnote .lf{font-weight:700;margin-right:6px}
+  .tnote .lc{color:#b45309}
+  .tnote .lf{color:var(--accent2)}
   .ba .box h4{margin:0 0 8px;font-size:13px;color:var(--mut)}
   .pill{display:inline-block;background:#eef3fb;color:#1d4ed8;border:1px solid var(--line);
     border-radius:20px;padding:1px 10px;font-size:11.5px;margin:2px 3px}
@@ -102,6 +119,7 @@
   <a href="#s14">14 · 시연 강조 포인트</a>
   <a href="#s15">15 · 추후 개선점</a>
   <a href="#s16">16 · 부록</a>
+  <a href="#s17">17 · 트러블슈팅</a>
 </nav>
 
 <main>
@@ -1192,6 +1210,83 @@ summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db</pre>
     <tr><td><code>observability.py</code></td><td>Logfire 콘솔. <code>setup_observability</code>·<code>request_span</code>(X-Trace-Id span 바인딩).</td></tr>
     <tr><td><code>schemas/</code></td><td><code>ingest.py</code>(Block·Chunk·ChunkMeta)·<code>disclosure.py</code>(RouterResult·QAResult·Citation 등)·<code>external.py</code>(v2.0 계약).</td></tr>
   </table>
+</section>
+
+<!-- 17 트러블슈팅 -->
+<section id="s17">
+  <h2 class="sec"><span class="n">17</span>트러블슈팅 — 알려진 이슈·해결 기록</h2>
+  <p class="sub">오답노트처럼 — 증상 → 원인 → 해결방안을 하나씩 적어둔다. 서사형 경위는
+  <code>docs/기간질의_버그수정_개발일지.md</code>, 이슈 대장은 <code>docs/세션_문제점_정리.md</code> 참고.
+  (2026-06-23 기간 질의 버그 사건에서 함께 드러난 이슈들)</p>
+
+  <details class="tgroup">
+  <summary>⚠️ 트러블슈팅 이슈 모음 (현재 8건)</summary>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">1.</span>기간 질문("2024년 사업보고서 …")이 "자료 없음"·빈 답으로 돌아온다</p>
+    <p class="cause"><span class="lc">원인</span> 라우터가 "2024년"을 <code>date_from/to</code>(예 20240101~20241231)로 변환하면 <code>chat.py</code>가 그 값을 <b>문자열</b>로 저장된 <code>rcept_dt</code>에 Chroma 범위 연산자 <code>$gte/$lte</code>로 걸었다. Chroma는 이 연산자에 int/float만 허용하므로 벡터 쿼리가 <code>ValueError</code>를 던졌고, 그 예외가 <code>asyncio.gather(return_exceptions=True)</code>에 잡혀 <b>로그 한 줄 없이</b> <code>corpus=[]</code>로 처리됐다. 결국 writer는 빈 근거(또는 재무 6계정만)를 받아 "자료 없음"이라 답했다 — <b>기간 표현이 들어간 모든 질문</b>이 영향.</p>
+    <p class="fix"><span class="lf">해결</span> 필터 기준 자체를 <b>사업연도 <code>bsns_year</code>(int)</b>로 바꿔 <code>_date_where</code>가 int 범위를 생성하게 했다(<code>chat.py</code>·<code>vectorstore.py</code>). 기존 청크 메타는 백필 마이그레이션으로 채웠고(재임베딩 없음), <b>떠 있던 서버는 BM25 인메모리 캐시 때문에 1회 재시작</b>이 필요하다. 검증: E2E <code>ss-period-shares</code> + 무료·결정적 검색 가드 <code>ss-ret-fy-*</code>.</p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">2.</span>"2024년 사업보고서"라고 물었는데 한 해 전(FY2023) 내용이 나온다</p>
+    <p class="cause"><span class="lc">원인</span> 기간을 <b>접수일(<code>rcept_dt</code>)</b> 기준으로 걸렀다. 그런데 사업보고서는 해당 사업연도 <b>다음 해 3월경</b>에 제출된다(FY2024 보고서 → 2025.03 접수). 즉 "접수연도 2024"로 거르면 실제로는 <b>FY2023(제55기)</b> 보고서가 잡혀 사용자 통념과 한 해가 어긋났다.</p>
+    <p class="fix"><span class="lf">해결</span> <code>report_nm</code>에 박힌 사업연도("사업보고서 (2024.12)" → 2024)를 정규식으로 파싱해 <code>bsns_year</code>로 저장·필터한다(<code>_bsns_year</code>). 이로써 "2024년"=FY2024(제56기)로 정합. 4개 컬렉션 <b>68,211개 청크 전부 파싱 성공</b>(미상 0).</p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">3.</span>연도를 지정했는데 재무 수치가 최신연도로 나오거나, 한 답에서 연도가 엇갈린다</p>
+    <p class="cause"><span class="lc">원인</span> 기간 필터가 <b>corpus 검색에만</b> 적용됐다. 재무 트랙(<code>fetch_financial_citations</code>)은 <code>corp_code</code>만 받아 <code>_pick_year</code>가 늘 '오늘 기준 최신연도'를 조회했고, 요약 트랙(<code>search_summaries</code>)은 <code>where</code> 인자 자체가 없었다. 그래서 한 답변 안에서 corpus는 2023년인데 재무는 2025년처럼 <b>연도가 엇갈릴</b> 수 있었다.</p>
+    <p class="fix"><span class="lf">해결</span> 재무에 <b>요청 사업연도</b>를 인자로 넘겨 그 해를 조회하고(데이터 없으면 최신으로 graceful 폴백), 요약 <code>search_summaries</code>에 <code>where</code>를 추가해 corpus와 동일 필터를 적용 → <b>세 트랙이 같은 사업연도</b>를 공유. 검증: <code>ss-fy-financial</code>(제55기 영업이익 6,566,976 확인)·<code>ss-fy-summary</code>.</p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">4.</span>근거가 갑자기 비어 답이 부실한데, 에러 로그도 안 보인다</p>
+    <p class="cause"><span class="lc">원인</span> <code>_retrieve</code>가 corpus·재무·거시를 <code>asyncio.gather(return_exceptions=True)</code>로 병렬 실행하는데, 예외가 나면 결과 자리에 <code>Exception</code> 객체가 들어오고 코드는 그걸 <b>조용히 <code>[]</code>로 치환</b>했다(로그 0). 1번의 <code>ValueError</code>가 바로 이 경로로 숨어, 겉으로는 "그냥 근거가 없네"처럼 보였다.</p>
+    <p class="fix"><span class="lf">해결</span> 결과 언랩을 <code>_ok(result, label)</code> 헬퍼로 통일 — graceful 동작(빈 리스트 반환)은 유지하되 예외는 <b>반드시 <code>log.warning("retrieve[%s] 실패…")</code></b>로 남긴다. 이제 동일 장애가 나면 로그에서 즉시 원인(외부 API/키 등)이 보인다.</p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">5.</span>적재했는데 일부 공시가 빠졌다</p>
+    <p class="cause"><span class="lc">원인</span> 인제스트 루프가 공시 1건 실패 시 <code>except</code>에서 "[i/N] 실패 …" 한 줄을 print하고 넘어갔다. 수십 건을 연속 적재하면 이 한 줄이 진행 로그에 묻혀, 일부 보고서가 빠진 채 "완료"처럼 보일 수 있었다.</p>
+    <p class="fix"><span class="lf">해결</span> 실패 <code>rcept</code>를 모아 적재 종료 시 <code>⚠️ N건 적재 실패 — …</code>로 한 번 더 요약 경고한다(<code>pipeline.py</code>). 누락이 눈에 띄면 해당 <code>rcept_no</code>만 재적재(이미 적재된 건 <code>has_disclosure</code> 스킵 가드로 중복 안 됨).</p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">6.</span>날짜 범위 비교가 Chroma에서 거부된다 (<code>Expected ... int or float</code>)</p>
+    <p class="cause"><span class="lc">원인</span> <code>rcept_dt</code>를 사람이 읽기 좋은 <b>문자열</b>("20240312")로 저장해 둔 상태에서 범위 비교가 필요해지자 숫자 전용 연산자 <code>$gte/$lte</code>를 적용 → <code>Expected operand value to be an int or a float … got 20240101</code>. 저장 타입과 쿼리 연산자가 어긋난 전형적 케이스(= 1번의 직접 트리거).</p>
+    <p class="fix"><span class="lf">해결</span> 비교가 필요한 메타(<code>rcept_dt</code>·<code>bsns_year</code>)는 <b>int로 저장</b>하고, <code>Citation</code>으로 돌려줄 때만 str로 복원(다운스트림 계약 유지). BM25 경로의 <code>_match_where</code>도 int 우선 비교로 통일. 기존 데이터는 일회성 스크립트(<code>scripts/migrate_*.py</code>)로 변환(재임베딩 없음).</p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">7.</span>검색이 엉뚱한 표를 상위로 잡는다</p>
+    <p class="cause"><span class="lc">원인</span> 하이브리드 검색이 쿼리 표현에 민감하다. "보통주 발행 주식총수"의 "<b>발행</b>"이 "증권의 발행을 통한 자금조달 실적"(회사채 발행) 표를 상위로 끌어올려, 정작 "주식의 총수 등" 청크가 top-5 밖으로 밀리기도 한다.</p>
+    <p class="fix"><span class="lf">해결</span> 단기로는 라우터가 쿼리를 섹션 어휘로 정제(예 "주식의 총수 유통주식수"), 사업연도 필터로 후보 풀이 좁아져 완화됨. 근본 해결은 복합 질의를 여러 검색으로 쪼개는 <b>쿼리 분해</b>(§15 개선안)로 남겨둠.</p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">8.</span>(메타) 이 버그가 왜 오래 안 잡혔나 — eval 공백</p>
+    <p class="cause"><span class="lc">원인</span> 골든·행동·검색 어느 세트에도 "2024년 …" 같은 <b>기간 한정 질문이 없었다</b>. 그래서 <code>date_from/to</code>가 채워지는 코드 경로(= 버그 지점)가 한 번도 실행되지 않아, 35개 케이스가 다 통과하는데도 버그가 살아 있었다.</p>
+    <p class="fix"><span class="lf">해결</span> <code>eval_retrieval</code>에 사업연도 필터(<code>fy_from/fy_to</code>)를 지원하고 결정적 가드 <code>ss-ret-fy-shares/-rnd</code> 추가, 골든·행동에 기간 E2E 케이스(<code>ss-period-shares</code>·<code>ss-fy-financial</code>·<code>ss-fy-summary</code>) 추가. <b>최종: 검색 13/13·MRR 0.933 · 골든 15/15 · 행동 6/6, 회귀 0.</b></p>
+  </div>
+  </details>
+
+  <div class="callout warn"><b>알아둘 점 — 코드는 정상, 미처리 버그 아님</b><br>
+    위 1~8번은 <b>전부 수정·검증 완료(회귀 0)</b>다. 아래는 코드 결함이 아니라 <b>운영 시 참고할 점·설계상 graceful 한계</b>로, 정상 동작을 막지 않는다.
+    <ul style="margin:8px 0 0;padding-left:18px">
+      <li><b>⚙️ 운영 행동</b> — 메타 마이그레이션을 적용할 땐 <b>uvicorn 1회 재시작</b>이 필요하다(떠 있던 서버는 BM25 인메모리 캐시가 옛 메타를 들고 있음; 새로 띄우거나 eval은 자동 반영). <i>버그가 아니라 배포 절차.</i></li>
+      <li><b>🟢 현재 무해</b> — <code>bsns_year=0</code>(연도 미상)이 <code>$lte</code>-only 필터에 섞일 이론적 여지가 있으나, 현재 데이터는 미상 0건이라 발생하지 않는다(추적만).</li>
+      <li><b>🟢 설계상 graceful</b> — 연도 정밀도는 라우터가 <code>date_from/to</code>를 채워야 작동한다(LLM). 못 채우면 <b>오류가 아니라</b> 무필터=최신으로 자연 저하한다.</li>
+      <li><b>🟢 설계상 graceful</b> — 아직 미제출인 미래연도를 물으면 재무가 최신연도로 폴백한다(답은 항상 근거 기반).</li>
+    </ul>
+  </div>
+
+  <div class="callout key"><b>교훈 (이번 사건에서 얻은 것 — 상태가 아니라 회고)</b><br>
+    ① 삼키는 graceful은 반드시 <b>로깅</b> 동반 &nbsp;
+    ② 범위 비교는 <b>숫자로 저장</b>(Chroma <code>$gte/$lte</code>는 숫자 전용) &nbsp;
+    ③ <b>도메인 시간축 구분</b>(사업연도 ≠ 접수일) &nbsp;
+    ④ <b>병렬 트랙은 같은 필터 공유</b> &nbsp;
+    ⑤ <b>eval 공백 = 방치된 버그</b>, 발견 즉시 결정적 가드로 박제.</div>
 </section>
 
 <footer>
