@@ -16,19 +16,28 @@ from app.schemas.disclosure import Citation
 _KEY_ACCOUNTS = ["매출액", "영업이익", "당기순이익", "자산총계", "부채총계", "자본총계"]
 
 
-def _pick_year(corp_code: str) -> tuple[str | None, list[dict]]:
-    """데이터 있는 최신 사업연도(사업보고서)를 찾는다."""
+def _pick_year(corp_code: str, want: int | None = None) -> tuple[str | None, list[dict]]:
+    """사업보고서(11011) 정형재무가 있는 사업연도를 찾는다.
+
+    want(요청 사업연도)가 있으면 그 해를 먼저 시도하고, 데이터가 없으면(예: 아직
+    미제출) 최신연도로 graceful 폴백한다 → 기간 질문은 그 해, 미지정은 최신.
+    """
     cur = datetime.date.today().year
-    for y in (cur, cur - 1, cur - 2):
+    candidates = ([want] if want else []) + [cur, cur - 1, cur - 2]
+    seen = set()
+    for y in candidates:
+        if y is None or y in seen:
+            continue
+        seen.add(y)
         rows = dart.fetch_financials(corp_code, str(y), "11011")
         if rows:
             return str(y), rows
     return None, []
 
 
-def fetch_financial_citations(corp_code: str) -> list[Citation]:
-    """핵심 계정을 연결재무제표(CFS) 기준으로 Citation 화."""
-    year, rows = _pick_year(corp_code)
+def fetch_financial_citations(corp_code: str, year: int | None = None) -> list[Citation]:
+    """핵심 계정을 연결재무제표(CFS) 기준으로 Citation 화. year=요청 사업연도(없으면 최신)."""
+    year, rows = _pick_year(corp_code, year)
     if not rows:
         return []
     out: list[Citation] = []
@@ -62,6 +71,8 @@ def fetch_financial_citations(corp_code: str) -> list[Citation]:
     return out
 
 
-async def fetch_financial_citations_async(corp_code: str) -> list[Citation]:
+async def fetch_financial_citations_async(
+    corp_code: str, year: int | None = None
+) -> list[Citation]:
     """asyncio 병렬용 — 블로킹 httpx 호출을 스레드로."""
-    return await asyncio.to_thread(fetch_financial_citations, corp_code)
+    return await asyncio.to_thread(fetch_financial_citations, corp_code, year)

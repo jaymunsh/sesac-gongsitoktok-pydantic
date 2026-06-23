@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import hashlib
+import logging
 
 from app.agents.agents import (
     format_citations,
@@ -32,6 +33,8 @@ from app.services import macro
 from app.services.financials import fetch_financial_citations_async
 from app.rag.vectorstore import get_vector_store
 
+log = logging.getLogger(__name__)
+
 
 async def _retrieve(
     corp_code: str, r: RouterResult, *, summary: bool = False
@@ -44,12 +47,14 @@ async def _retrieve(
     s = get_settings()
     store = get_vector_store()
     query = r.search_query or ""
-    where = _date_where(r)
+    where = _date_where(r)  # 사업연도(bsns_year) 필터
 
     async def corpus() -> list[Citation]:
         if summary:
-            # 사전요약 트랙: summary_<corp>에서 '완성 요약'을 먼저 꺼낸다.
-            sums = await asyncio.to_thread(store.search_summaries, corp_code, query, s.summary_top_k)
+            # 사전요약 트랙: summary_<corp>에서 '완성 요약'을 먼저 꺼낸다(기간 필터 동일 적용).
+            sums = await asyncio.to_thread(
+                store.search_summaries, corp_code, query, s.summary_top_k, where
+            )
             if sums:
                 return sums
             # 폴백: 사전요약이 아직 없으면 기존 실시간 corpus RAG(본문 청크 우선).
@@ -63,27 +68,56 @@ async def _retrieve(
 
     tasks = [corpus()]
     if r.financial_relevant:
-        tasks.append(fetch_financial_citations_async(corp_code))
+        # 재무도 같은 사업연도를 조회(미지정/미존재면 최신으로 graceful 폴백)
+        tasks.append(fetch_financial_citations_async(corp_code, _target_fy(r)))
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    corpus_cits = results[0] if not isinstance(results[0], Exception) else []
-    fin_cits = (
-        results[1] if len(results) > 1 and not isinstance(results[1], Exception) else []
-    )
+    corpus_cits = _ok(results[0], "corpus")
+    fin_cits = _ok(results[1], "financials") if len(results) > 1 else []
     # 재무 정형수치(정확·authoritative)를 앞에 둔다 → used 상위에 항상 포함
     return list(fin_cits) + list(corpus_cits)
 
 
+def _ok(result, label: str) -> list:
+    """asyncio.gather 결과 언랩 — 예외는 [] 로 graceful 하되 **반드시 로깅**한다.
+
+    (과거: 예외를 조용히 삼켜 날짜필터 버그가 0건으로 둔갑한 채 방치됐다. §12-5)
+    """
+    if isinstance(result, Exception):
+        log.warning("retrieve[%s] 실패(graceful): %r", label, result)
+        return []
+    return result
+
+
 def _date_where(r: RouterResult) -> dict | None:
-    """기간 표현 → rcept_dt 메타필터(Chroma where)."""
+    """기간 표현 → **사업연도(bsns_year)** 메타필터(Chroma where).
+
+    '2024년 사업보고서'=FY2024 이므로 접수일(rcept_dt)이 아니라 사업연도로 거른다
+    (접수일은 FY+1에 제출돼 의미가 어긋남). bsns_year는 int 저장 → $gte/$lte도 int.
+    """
     conds = []
-    if r.date_from:
-        conds.append({"rcept_dt": {"$gte": r.date_from}})
-    if r.date_to:
-        conds.append({"rcept_dt": {"$lte": r.date_to}})
+    if (lo := _fy_int(r.date_from)) is not None:
+        conds.append({"bsns_year": {"$gte": lo}})
+    if (hi := _fy_int(r.date_to)) is not None:
+        conds.append({"bsns_year": {"$lte": hi}})
     if not conds:
         return None
     return conds[0] if len(conds) == 1 else {"$and": conds}
+
+
+def _fy_int(v: str | None) -> int | None:
+    """'YYYYMMDD'/'YYYY...' → 사업연도 int(앞 4자리). 비숫자/None이면 None."""
+    if not v:
+        return None
+    try:
+        return int(str(v)[:4])
+    except (TypeError, ValueError):
+        return None
+
+
+def _target_fy(r: RouterResult) -> int | None:
+    """재무 조회 대상 사업연도 — 기간 끝(없으면 시작) 연도. 미지정이면 None(최신)."""
+    return _fy_int(r.date_to) or _fy_int(r.date_from)
 
 
 def _verdict_of(score: float) -> VerificationVerdict:

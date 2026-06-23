@@ -43,6 +43,7 @@ def ingest_company(corp_code: str, corp_name: str, bgn: str, end: str, *, dry_ru
     store = get_vector_store()
     coll = corpus_collection(corp_code)
     done = skipped = total_chunks = 0
+    failed: list[str] = []
     for i, t in enumerate(targets, 1):
         rcept = t["rcept_no"]
         if store.has_disclosure(corp_code, rcept):
@@ -62,5 +63,8 @@ def ingest_company(corp_code: str, corp_name: str, bgn: str, end: str, *, dry_ru
             done += 1
             print(f"  [{i}/{len(targets)}] {t['report_nm'].strip()[:28]} → {n}청크 (누적 {total_chunks})")
         except Exception as e:
+            failed.append(f"{rcept}({e})")
             print(f"  [{i}/{len(targets)}] 실패 {rcept}: {e}")
     print(f"  ✅ {corp_name}: 신규 {done} / 스킵 {skipped} / 총 {total_chunks}청크 (collection={coll})")
+    if failed:  # 실패가 조용히 묻히지 않게 끝에서 한 번 더 경고(적재 누락 가시화)
+        print(f"  ⚠️  {corp_name}: {len(failed)}건 적재 실패 — {', '.join(failed)}")

@@ -18,6 +18,22 @@ from pathlib import Path
 from app.rag.vectorstore import get_vector_store
 
 
+def _where_of(case: dict) -> dict | None:
+    """케이스의 fy_from/fy_to → bsns_year(사업연도) int 범위필터(Chroma where).
+
+    기간 질의 회귀 가드용: bsns_year가 int로 저장돼 $gte/$lte가 동작해야 한다
+    (과거 문자열 rcept_dt에 숫자 연산자를 써서 조용히 0건이 된 버그, 보고서 §12-5).
+    """
+    conds = []
+    if case.get("fy_from"):
+        conds.append({"bsns_year": {"$gte": int(case["fy_from"])}})
+    if case.get("fy_to"):
+        conds.append({"bsns_year": {"$lte": int(case["fy_to"])}})
+    if not conds:
+        return None
+    return conds[0] if len(conds) == 1 else {"$and": conds}
+
+
 def _hit(citations, expect_any: list[str]) -> tuple[bool, int]:
     """top-k 중 expect_any가 처음 등장한 순위(1-based) 반환. 없으면 (False, 0)."""
     for rank, c in enumerate(citations, 1):
@@ -42,7 +58,7 @@ def main() -> int:
     rr_sum = 0.0  # MRR(평균 역순위)
     print(f"=== 검색 평가 {len(cases)}케이스 · hit@{args.k} ===\n")
     for c in cases:
-        cits = store.search(c["corp"], c["query"], top_k=args.k)
+        cits = store.search(c["corp"], c["query"], top_k=args.k, where=_where_of(c))
         hit, rank = _hit(cits, c["expect_any"])
         rr_sum += (1.0 / rank) if hit else 0.0
         sev = c.get("severity", "must")

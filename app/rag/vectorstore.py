@@ -39,6 +39,37 @@ def _tokenize(text: str) -> list[str]:
     return re.findall(r"[0-9][0-9,]*[0-9]|[0-9]|[가-힣]+|[A-Za-z]+", text.lower())
 
 
+def _dt_int(v):
+    """rcept_dt(YYYYMMDD) → int(Chroma 숫자 범위필터 $gte/$lte용). 비숫자면 원본 유지."""
+    try:
+        return int(str(v))
+    except (TypeError, ValueError):
+        return v
+
+
+def _dt_str(v):
+    """int로 저장된 rcept_dt를 다시 'YYYYMMDD' 문자열로(다운스트림 계약·dartUrl용)."""
+    return str(v) if v is not None else None
+
+
+_FY_RE = re.compile(r"\((\d{4})\.\d{2}\)")  # report_nm "사업보고서 (2024.12)" → 2024
+
+
+def _bsns_year(report_nm: str | None) -> int:
+    """report_nm에서 **사업연도(int)** 추출. 기간 질의는 접수일이 아니라 사업연도로 거른다
+    ('2024년 사업보고서'=FY2024). 파싱 실패는 0(=미상, 연도필터에서 자연히 제외)."""
+    m = _FY_RE.search(report_nm or "")
+    return int(m.group(1)) if m else 0
+
+
+def _cmp_dt(val, target):
+    """rcept_dt 범위비교 — int 우선, 실패 시 문자열(마이그레이션 과도기 안전)."""
+    try:
+        return int(val), int(target)
+    except (TypeError, ValueError):
+        return str(val), str(target)
+
+
 def _match_where(meta: dict, where: dict) -> bool:
     """BM25 후보에 chroma where 필터를 동일하게 적용(우리가 쓰는 연산자 부분집합)."""
     if "$and" in where:
@@ -47,10 +78,14 @@ def _match_where(meta: dict, where: dict) -> bool:
         val = meta.get(field)
         if isinstance(cond, dict):
             for op, target in cond.items():
-                if op == "$gte" and not (val is not None and str(val) >= str(target)):
-                    return False
-                if op == "$lte" and not (val is not None and str(val) <= str(target)):
-                    return False
+                if op in ("$gte", "$lte"):
+                    if val is None:
+                        return False
+                    lv, rv = _cmp_dt(val, target)
+                    if op == "$gte" and not lv >= rv:
+                        return False
+                    if op == "$lte" and not lv <= rv:
+                        return False
                 if op == "$eq" and val != target:
                     return False
         elif val != cond:
@@ -89,7 +124,8 @@ class VectorStore:
                     "kind": c.meta.kind,
                     "rcept_no": c.meta.rcept_no,
                     "report_nm": c.meta.report_nm,
-                    "rcept_dt": c.meta.rcept_dt,
+                    "rcept_dt": _dt_int(c.meta.rcept_dt),  # 숫자 범위필터용 int 저장
+                    "bsns_year": _bsns_year(c.meta.report_nm),  # 사업연도 필터 키
                     "order": c.meta.order,
                 }
                 for c in chunks
@@ -122,7 +158,8 @@ class VectorStore:
                 {
                     "raw_text": c.raw_text, "section_title": c.meta.section_title,
                     "kind": "summary", "rcept_no": c.meta.rcept_no,
-                    "report_nm": c.meta.report_nm, "rcept_dt": c.meta.rcept_dt,
+                    "report_nm": c.meta.report_nm, "rcept_dt": _dt_int(c.meta.rcept_dt),
+                    "bsns_year": _bsns_year(c.meta.report_nm),
                     "order": c.meta.order,
                 }
                 for c in chunks
@@ -137,8 +174,13 @@ class VectorStore:
             return False
         return coll.get(where={"rcept_no": rcept_no}, limit=1).get("ids", []) != []
 
-    def search_summaries(self, corp_code: str, query: str, top_k: int | None = None) -> list[Citation]:
-        """사전요약 컬렉션에서 의미검색(벡터). 요약은 이미 간결·서술이라 벡터만으로 충분."""
+    def search_summaries(
+        self, corp_code: str, query: str, top_k: int | None = None, where: dict | None = None
+    ) -> list[Citation]:
+        """사전요약 컬렉션에서 의미검색(벡터). 요약은 이미 간결·서술이라 벡터만으로 충분.
+
+        where(사업연도 필터)를 주면 corpus 트랙과 동일하게 기간을 존중한다(트랙 간 일관성).
+        """
         s = get_settings()
         k = top_k or s.summary_top_k
         try:
@@ -146,7 +188,7 @@ class VectorStore:
         except Exception:
             return []
         q_emb = self.embedder.embed_query(query)
-        res = coll.query(query_embeddings=[q_emb], n_results=k)
+        res = coll.query(query_embeddings=[q_emb], n_results=k, where=where or None)
         ids = res.get("ids", [[]])[0]
         docs = res.get("documents", [[]])[0]
         metas = res.get("metadatas", [[]])[0]
@@ -160,7 +202,7 @@ class VectorStore:
                     quote=m.get("raw_text") or doc,
                     score=round(1 - float(dist), 4) if dist is not None else None,
                     kind="summary", rcept_no=m.get("rcept_no"),
-                    report_nm=m.get("report_nm"), rcept_dt=m.get("rcept_dt"),
+                    report_nm=m.get("report_nm"), rcept_dt=_dt_str(m.get("rcept_dt")),
                 )
             )
         return out
@@ -265,7 +307,7 @@ class VectorStore:
             kind=m.get("kind", "text"),
             rcept_no=m.get("rcept_no"),
             report_nm=m.get("report_nm"),
-            rcept_dt=m.get("rcept_dt"),
+            rcept_dt=_dt_str(m.get("rcept_dt")),
         )
 
 

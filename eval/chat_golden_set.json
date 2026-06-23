@@ -149,6 +149,33 @@
       "expect": {"out_of_scope": true},
       "severity": "must",
       "note": "방에 박힌 기업과 다른 회사 → outOfScope"
+    },
+    {
+      "id": "ss-period-shares",
+      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "question": "2024년 사업보고서 기준 보통주 발행 주식총수는 얼마나 돼?",
+      "behavior": "기간 한정 질문 - 사업연도 필터 적용해도 corpus 근거가 살아있어야(E2E)",
+      "expect": {"intent": "qa", "has_number": true, "verdict_not": "fail"},
+      "severity": "must",
+      "note": "bsns_year 사업연도 필터 회귀 가드(§12-5). 버그 시 corpus 0건→빈 거절(숫자 없음). 결정적 가드는 eval_retrieval ss-ret-fy-*"
+    },
+    {
+      "id": "ss-fy-financial",
+      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "question": "2023년 삼성전자 영업이익 알려줘",
+      "behavior": "기간 한정 재무 - 재무 트랙이 요청 사업연도(FY2023)를 조회(최신연도 아님)",
+      "expect": {"intent": "qa", "contains_any": ["6,566,976"], "verdict_not": "fail"},
+      "severity": "must",
+      "note": "재무 트랙이 date를 무시하고 최신연도만 주던 문제(§12-5 B) 가드. 제55기 영업이익 6,566,976 백만원"
+    },
+    {
+      "id": "ss-fy-summary",
+      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "question": "2023년 삼성전자 사업 내용 요약해줘",
+      "behavior": "기간 한정 요약 - summary 트랙도 사업연도 필터를 존중(빈 결과/회귀 없음)",
+      "expect": {"intent": "summary", "verdict_not": "fail"},
+      "severity": "must",
+      "note": "summary가 where(사업연도)를 받도록 한 뒤 회귀 없음 확인(§12-5 B)"
     }
   ]
 }

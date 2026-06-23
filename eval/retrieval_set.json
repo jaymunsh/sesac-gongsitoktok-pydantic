@@ -19,6 +19,8 @@
     {"id": "ss-ret-region", "corp": "00126380", "query": "지역별 매출 미주 유럽 아시아", "expect_any": ["지역", "미주", "유럽"], "severity": "watch", "note": "terse 개념 질의 — 알려진 약점(쿼리분해 필요)"},
     {"id": "hd-ret-business", "corp": "00164742", "query": "주요 사업 자동차 제조 판매 차량", "expect_any": ["자동차", "차량", "사업의 내용"], "severity": "must"},
     {"id": "hd-ret-dividend", "corp": "00164742", "query": "배당 정책 결산배당", "expect_any": ["배당"], "severity": "must"},
-    {"id": "hd-ret-rnd", "corp": "00164742", "query": "연구개발 실적 친환경 전동화", "expect_any": ["연구개발", "친환경", "전동"], "severity": "must"}
+    {"id": "hd-ret-rnd", "corp": "00164742", "query": "연구개발 실적 친환경 전동화", "expect_any": ["연구개발", "친환경", "전동"], "severity": "must"},
+    {"id": "ss-ret-fy-shares", "corp": "00126380", "query": "주식의 총수 발행주식 보통주", "fy_from": "2024", "fy_to": "2024", "expect_any": ["주식의 총수", "5,969,782,550"], "severity": "must", "note": "사업연도 필터 회귀 가드 — bsns_year int 범위($gte/$lte) 동작 확인(과거 조용한 0건 버그, §12-5)"},
+    {"id": "ss-ret-fy-rnd", "corp": "00126380", "query": "연구개발 실적 비용 조직", "fy_from": "2023", "fy_to": "2023", "expect_any": ["연구개발"], "severity": "must", "note": "사업연도 필터 적용해도 섹션 회수 유지"}
   ]
 }

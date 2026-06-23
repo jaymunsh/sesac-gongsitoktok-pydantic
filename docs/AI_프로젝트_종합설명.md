@@ -228,7 +228,8 @@ meta         : ChunkMeta(...)
 | `corp_code` / `corp_name` | `00126380` / `삼성전자` | 컬렉션·출처 |
 | `rcept_no` | `20250311001085` | 공시 식별·중복적재 방지·**출처추적**·DART 링크 |
 | `report_nm` | `사업보고서 (2024.12)` | 출처 표시 |
-| `rcept_dt` | `20250311` | **날짜 메타필터 키**(기간 질의) |
+| `rcept_dt` | `20250311` | 접수일(출처·`prefer_recent`·DART 링크). Chroma엔 **int** 저장 |
+| `bsns_year` | `2024` | **기간 질의 필터 키**(사업연도, int) — "2024년 사업보고서"=FY2024. report_nm에서 파생, `$gte/$lte` 범위필터. 접수일이 아닌 **사업연도**로 거름(§12-5) |
 | `pblntf_ty` | `A` | 공시유형(A=정기) |
 | `section_title` | `II. 사업의 내용 > 1. 사업의 개요` | 섹션 경로(`>` 구분), 출처·랭킹 |
 | `kind` | `text` / `table` | 본문/표 구분(요약은 text 우선) |
@@ -246,7 +247,7 @@ meta         : ChunkMeta(...)
 - DART는 섹션 계층(I~XII)이 명확해 `section_title`이 풍부하고, 표 캡션까지 문맥에 넣어 일반 문서보다 유리.
 
 ### 4-4. 메타 활용처 요약
-- **컬렉션 분리**(`corpus_<corp_code>`) + `rcept_dt` 필터 → 기업·기간 혼동을 구조적으로 차단.
+- **컬렉션 분리**(`corpus_<corp_code>`) + `bsns_year`(사업연도) 필터 → 기업·기간 혼동을 구조적으로 차단.
 - **kind** → 요약 트랙은 `text` 청크 우선(빈약한 수치 표에 끌려가지 않게).
 - **rcept_no/report_nm/rcept_dt** → 모든 답의 출처 카드(`sources[]`)와 DART 원문 링크(`dartUrl`) 생성.
 
@@ -698,9 +699,9 @@ summary 질문은 항상 `summary_<corp>`를 **먼저** 뒤지고, 결과가 안
 
 | 계층 | 무엇 | 비용 | 결과 |
 |---|---|---|---|
-| **① 검색** (`eval_retrieval.py`) | 정답 청크 회수율 hit@k·MRR — 표파싱·하이브리드·Contextual 직접 측정 | **무료·결정적**(LLM 없음) | must **11/11 hit@5(100%)**, MRR **0.923** |
+| **① 검색** (`eval_retrieval.py`) | 정답 청크 회수율 hit@k·MRR — 표파싱·하이브리드·Contextual·**날짜필터** 직접 측정 | **무료·결정적**(LLM 없음) | must **13/13 hit@5(100%)**, MRR **0.933** |
 | **② 행동** (`eval_chat.py`) | 멀티턴·거시결합·표질의·되묻기·스코프비교·숫자신선도 | LLM | **6/6 must + 2 watch** |
-| **③ 회귀** (`run_golden_inproc.py`) | 기존 14케이스 회귀 스모크(인텐트·정확수치·스코프) | LLM | **12/12 must + 2 watch** |
+| **③ 회귀** (`run_golden_inproc.py`) | 15케이스 회귀 스모크(인텐트·정확수치·스코프·**기간**) | LLM | **13/13 must + 2 watch** |
 
 - **검색 평가**가 핵심: LLM 없이 임베딩+BM25만 돌려 **공짜·결정적**으로 검색 품질을 격리 측정 →
   재구축의 진짜 개선을 숫자로 증명. CI에서 매번 돌릴 수 있다.
@@ -772,11 +773,11 @@ def evaluate(case, resp):
 ```
 ```text
 # ③ 실제 실행 출력(발췌)
-=== 챗 골든셋 14케이스 (인프로세스) ===
+=== 챗 골든셋 15케이스 (인프로세스) ===
   [PASS ] ss-num-opincome        | 숫자 트랙 - 영업이익(RAG exact-match)
   [PASS ] ss-scope-other-company | 스코프 가드 - 다른 회사 질문
   ...
---- 결과 ---   must : 12/12 통과   watch : 2/2 통과
+--- 결과 ---   must : 13/13 통과   watch : 2/2 통과
 ✅ must 전부 통과
 ```
 → 파일에 케이스 한 줄 추가하면 바로 검증 대상. 미통과 시 사유(`intent=summary (기대 qa)` 등)가 함께 찍혀 디버깅 쉬움.
@@ -784,18 +785,18 @@ def evaluate(case, resp):
 ### 12-3. 결과 (현재)
 | 계층 | 케이스 | 결과 |
 |---|---|---|
-| ① 검색 | 13 (must 11 / watch 2) | **must 11/11 hit@5(100%) · MRR 0.923** |
+| ① 검색 | 15 (must 13 / watch 2) | **must 13/13 hit@5(100%) · MRR 0.933** |
 | ② 행동 | 8 (must 6 / watch 2) | **must 6/6 · watch 2/2** |
-| ③ 회귀(골든) | 14 (must 12 / watch 2) | **must 12/12 · watch 2/2** |
+| ③ 회귀(골든) | 17 (must 15 / watch 2) | **must 15/15 · watch 2/2** |
 
 사전요약 트랙 도입 후에도 회귀 없음(요약 케이스 전부 통과). 상세는 `eval/EVAL_README.md`.
 
 **측정 방법 (코드 기준)**: `intent`=정확 일치 · `contains_any`=answer+모든 citation.quote 텍스트에 부분문자열 포함 · `has_number`=정규식 `\d{1,3}(,\d{3})+` · `verdict_not`=verdict(=grounded_score 임계값 0.7/0.4로 도출)가 금지값이면 실패 · `out_of_scope`/`macro_used`/`needs_clarification`=불리언 플래그 · `no_citations`=citations 길이 0 · 검색 `expect_any`=top-k의 (section_title+quote)에 첫 등장 순위 → `1/순위`로 MRR. **집계**: must 전부 통과 시 종료코드 0(CI), watch는 분리.
 
 ### 12-4. 전체 케이스 목록 (무엇을 검사했나)
-실제 검사한 35개 케이스 전부. ✅=must 통과, 🔶=watch(약점·추적용).
+실제 검사한 40개 케이스 전부. ✅=must 통과, 🔶=watch(약점·추적용).
 
-**① 회귀 골든 — 14건 · must 12/12**
+**① 회귀 골든 — 17건 · must 15/15**
 
 | 케이스 | 질문 | 검사 포인트 |
 |---|---|---|
@@ -813,6 +814,9 @@ def evaluate(case, resp):
 | ✅ hd-num-liabilities | 현대 부채총계 | 숫자 포함·verdict≠fail |
 | 🔶 hd-route-business-plain | 현대 무슨 사업 해? | summary 라우팅 |
 | ✅ hd-scope-other-company | 기아 매출 | out_of_scope=true |
+| ✅ ss-period-shares | 2024년 사업보고서 기준 보통주 발행 주식총수 | 사업연도 필터 적용해도 corpus 근거 생존(숫자·verdict≠fail) |
+| ✅ ss-fy-financial | 2023년 삼성전자 영업이익 | 재무가 요청 사업연도(FY2023) 조회 — 6,566,976 |
+| ✅ ss-fy-summary | 2023년 삼성전자 사업 내용 요약 | 요약 트랙도 사업연도 필터 존중·회귀 없음 |
 
 **② 행동 — 8건 · must 6/6**
 
@@ -827,7 +831,7 @@ def evaluate(case, resp):
 | 🔶 clarify-ambiguous | 삼성 이익 얼마야? | '이익' 모호 → 되묻기(변동 허용) |
 | 🔶 unanswerable-future | 현대 내년 전망치 | 미래 전망 환각 대신 한계 |
 
-**③ 검색 — 13건 · must 11/11 hit@5(100%)**
+**③ 검색 — 15건 · must 13/13 hit@5(100%)**
 
 | 케이스 | 검색쿼리 | 정답 회수 기대 |
 |---|---|---|
@@ -844,6 +848,8 @@ def evaluate(case, resp):
 | ✅ hd-ret-business | 주요 사업 자동차 제조 | 자동차 / 차량 / 사업의 내용 |
 | ✅ hd-ret-dividend | 배당 정책 결산배당 | 배당 |
 | ✅ hd-ret-rnd | 연구개발 친환경 전동화 | 연구개발 / 친환경 / 전동 |
+| ✅ ss-ret-fy-shares | 주식의 총수 발행주식 보통주 (FY2024) | 주식의 총수 / 5,969,782,550 — **사업연도 필터 회귀 가드** |
+| ✅ ss-ret-fy-rnd | 연구개발 실적 비용 (FY2023) | 연구개발 — 필터 적용해도 회수 유지 |
 
 ### 12-5. 개발 일지 — 잡은 버그와 교훈
 코드가 지금 모양인 **이유**는 대개 이 버그들에서 왔다. 증상 → 원인 → 수정.
@@ -857,8 +863,11 @@ def evaluate(case, resp):
 | "삼성**랑** SK 비교"가 out_of_scope 안 걸림 | 방 회사가 같이 언급돼 in-scope 오판. 기존 골든은 순수 타사라 못 잡음 | 라우터에 **비교 질문** 규칙. **행동 평가(eval)가 이 버그를 잡음** |
 | 답마다 말투·도입부 제각각, 기수 오기 | 답 주체 4개가 페르소나 미공유 + 재무 근거에 기수 명칭 없어 추측 | 공통 `_PERSONA` + 재무 quote에 실제 기수(`thstrm_nm`). **일관성=공유 규칙+근거 명시** |
 | verifier verdict가 런마다 pass↔fail 변동 | 모델이 verdict 라벨을 직접 매겨 비결정적 | `grounded_score`만 받고 **verdict는 코드가 임계값(0.7/0.4)으로 확정** |
+| 기간 질문("2024년 사업보고서…")이 **corpus 근거 0건 → 빈 거절** | 기간 필터를 **문자열** `rcept_dt`에 Chroma 숫자 연산자 `$gte/$lte`로 걸어 벡터 쿼리가 `ValueError` → `asyncio.gather(return_exceptions=True)`에 **조용히 삼켜져 `[]`** | 필터 기준을 **사업연도(`bsns_year` int)**로 전환(메타 백필, 재임베딩 없음). 예외를 **반드시 로깅**(`_ok`). eval에 사업연도 케이스(`ss-ret-fy-*`·`ss-period-shares`) 추가 |
+| "2024년 사업보고서"가 **FY2023 보고서**를 가리킴(의미 어긋남) | 기간을 **접수일**(rcept_dt)로 해석 — 사업보고서는 FY+1에 제출되므로 접수연도≠사업연도 | report_nm("…(2024.12)")에서 **사업연도 파싱**해 `bsns_year`로 필터 → "2024년"=FY2024로 정합. **교훈: 도메인 시간축(사업연도 vs 접수일)을 구분하라** |
+| 기간 질문인데 **재무·요약 트랙이 연도를 무시** | 재무(`fetch_financial_citations`)는 항상 최신연도, 요약(`search_summaries`)은 `where` 미수신 → corpus만 거르고 두 트랙은 안 걸러 **한 답에서 연도 엇갈림** | 재무에 요청 사업연도 전달(미존재 시 최신 폴백), 요약에 `where` 전달 → **세 트랙 동일 사업연도**. **교훈: 병렬 트랙은 같은 필터를 공유해야 일관** |
 
-**교훈 요약** — ①에이전트엔 "작성"만, 출처·판정은 코드가 고정 ②융합·분할엔 안전장치 ③일관성은 공유 페르소나+근거 명시 ④**좋은 eval이 진짜 버그를 잡는다.**
+**교훈 요약** — ①에이전트엔 "작성"만, 출처·판정은 코드가 고정 ②융합·분할엔 안전장치 ③일관성은 공유 페르소나+근거 명시 ④**좋은 eval이 진짜 버그를 잡는다**(반대로 eval 공백·삼킨 예외는 버그를 가린다) ⑤도메인 시간축 구분(사업연도≠접수일)+병렬 트랙은 같은 필터 공유.
 
 ---
 
@@ -886,7 +895,7 @@ def evaluate(case, resp):
 3. **정확수치 = 재무결합** — "영업이익 얼마?" → DART 정형 API로 **43,601,051,000,000원** 정확 제시(+출처 접수번호·DART 링크).
 4. **거시결합** — "요즘 환율·금리 상황에서 실적 어때?" → `macroSnapshot`(환율·기준금리·국고채·KOSPI) 결합.
 5. **정확도(groundedScore)·provenance** — 모든 답에 근거 충실도 % + 출처 카드(접수번호·섹션·인용) + DART 원문 링크.
-6. **평가 수치** — 검색 must 11/11 hit@5(100%)·MRR 0.923, 회귀 골든 14/14.
+6. **평가 수치** — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 15/15(17케이스).
 7. **API 절약 로직** — 모델 티어링·retrieve-then-read·정형API·캐시(§13)로 "왜 싸고 정확한지" 설명.
 8. **X-Trace-Id 추적 + Logfire 콘솔** — 한 요청의 내부 추론(router→검색→writer→verifier) 타임라인을 trace로 시연.
 9. **스코프 가드** — 방 회사가 아닌/비교 질문을 차단(out_of_scope) → 객관성·범위 통제.
@@ -954,7 +963,7 @@ docs/                설계·아키텍처·기술설명·본 종합설명
 ```
 
 ### 16-2. 스키마 레퍼런스 (요지)
-- `ChunkMeta`: corp_code·corp_name·rcept_no·report_nm·rcept_dt·pblntf_ty·section_title·kind·order
+- `ChunkMeta`: corp_code·corp_name·rcept_no·report_nm·rcept_dt·pblntf_ty·section_title·kind·order (+Chroma 저장 시 `bsns_year`(사업연도 int, report_nm 파생) 추가)
 - `Citation`: chunk_id·section_title·quote·score·kind·rcept_no·report_nm·rcept_dt
 - `RouterResult`: intent·needs_evidence·financial_relevant·macro_relevant·out_of_scope·detected_company·reply·search_query·date_from·date_to·prefer_recent
 - `ChatV2Request`: roomId·userSeq·companyContext{corpCode,corpName}·messages[{role,content}]
