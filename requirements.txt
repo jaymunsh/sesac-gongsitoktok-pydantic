@@ -1,0 +1,29 @@
+# ── 에이전트 프레임워크 ──────────────────────────────
+pydantic-ai==1.*               # 타입세이프 에이전트(구조화 출력+재시도)
+
+# ── 코어 ────────────────────────────────────────────
+pydantic==2.*
+pydantic-settings==2.*
+
+# ── LLM / 임베딩 (OpenAI) ────────────────────────────
+openai==1.*                    # text-embedding-3-small, gpt-4o-mini, gpt-5.1, o4-mini
+
+# ── RAG: 벡터 + BM25 하이브리드 ──────────────────────
+chromadb==0.5.*
+rank-bm25==0.2.*               # BM25 키워드 검색(하이브리드)
+
+# ── 데이터 연동 / 파싱 ───────────────────────────────
+httpx==0.28.*                  # OpenDART / ECOS REST
+beautifulsoup4==4.12.*         # 공시 XML/HTML 파싱
+lxml==5.*                      # bs4 파서 백엔드(표-인식 파싱 정확도)
+
+# ── API (과제형: 보관/조회) ──────────────────────────
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+python-multipart==0.0.*
+
+# ── 관찰성 (선택, 콘솔 모드는 토큰 불필요) ───────────
+logfire==4.*                   # PydanticAI 에이전트·HTTP trace (OBSERVABILITY=console)
+
+# ── 유틸 ────────────────────────────────────────────
+python-dotenv==1.*

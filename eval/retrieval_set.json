@@ -1,0 +1,24 @@
+{
+  "_meta": {
+    "purpose": "검색(retrieval) 단계 직접 평가 — 표-인식 파싱·하이브리드·Contextual의 실효를 LLM 없이 싸게 측정",
+    "method": "정제된 query로 corpus 하이브리드 검색 → top-k 결과의 (section_title+quote)에 expect_any 중 하나라도 있으면 hit",
+    "metric": "hit@k (정답 청크 회수율). 라우터/writer를 안 거치므로 결정적·무비용(임베딩+BM25만)",
+    "severity": "must=핵심 회수 / watch=알려진 약점(단일 라우팅·terse 질의 한계)",
+    "top_k": 5
+  },
+  "cases": [
+    {"id": "ss-ret-income-revenue", "corp": "00126380", "query": "연결 손익계산서 매출액", "expect_any": ["300,870,903", "손익계산서"], "severity": "watch", "note": "정확 재무라인은 재무결합 노드 담당 — corpus 단독은 약함(설계상 의도)"},
+    {"id": "ss-ret-segment", "corp": "00126380", "query": "사업부문별 매출 DX DS 반도체", "expect_any": ["DX 부문", "DS 부문", "부문별"], "severity": "must", "note": "표-인식이 살린 부문 표"},
+    {"id": "ss-ret-business", "corp": "00126380", "query": "주요 사업 메모리 반도체 DRAM NAND", "expect_any": ["DRAM", "NAND", "메모리"], "severity": "must", "note": "사업 개요 본문"},
+    {"id": "ss-ret-harman", "corp": "00126380", "query": "하만 전장 디지털 콕핏 카오디오", "expect_any": ["Harman", "하만", "콕핏", "전장"], "severity": "must", "note": "고유 엔티티 검색"},
+    {"id": "ss-ret-dividend", "corp": "00126380", "query": "배당 정책 결산배당 배당성향", "expect_any": ["배당에 관한 사항", "배당"], "severity": "must", "note": "섹션 회수"},
+    {"id": "ss-ret-treasury", "corp": "00126380", "query": "자기주식 취득 처분 현황", "expect_any": ["자기주식"], "severity": "must"},
+    {"id": "ss-ret-largest", "corp": "00126380", "query": "최대주주 및 특수관계인 지분 현황", "expect_any": ["최대주주"], "severity": "must"},
+    {"id": "ss-ret-rnd", "corp": "00126380", "query": "연구개발 실적 비용 조직", "expect_any": ["연구개발"], "severity": "must"},
+    {"id": "ss-ret-risk", "corp": "00126380", "query": "사업위험 시장위험 재무위험관리 파생", "expect_any": ["위험관리", "재무위험", "파생"], "severity": "must", "note": "라우터 정제 쿼리 가정"},
+    {"id": "ss-ret-region", "corp": "00126380", "query": "지역별 매출 미주 유럽 아시아", "expect_any": ["지역", "미주", "유럽"], "severity": "watch", "note": "terse 개념 질의 — 알려진 약점(쿼리분해 필요)"},
+    {"id": "hd-ret-business", "corp": "00164742", "query": "주요 사업 자동차 제조 판매 차량", "expect_any": ["자동차", "차량", "사업의 내용"], "severity": "must"},
+    {"id": "hd-ret-dividend", "corp": "00164742", "query": "배당 정책 결산배당", "expect_any": ["배당"], "severity": "must"},
+    {"id": "hd-ret-rnd", "corp": "00164742", "query": "연구개발 실적 친환경 전동화", "expect_any": ["연구개발", "친환경", "전동"], "severity": "must"}
+  ]
+}
