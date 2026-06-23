@@ -91,6 +91,7 @@
   <a href="#s6" class="star">6 · 파이프라인 상세</a>
   <a href="#walk" style="padding-left:20px;font-size:12.5px">· E2E 워크스루</a>
   <a href="#s7" class="star">7 · 에이전트 영역</a>
+  <a href="#multi" style="padding-left:20px;font-size:12.5px">· 복합·멀티턴 처리</a>
   <a href="#s8" class="star">8 · 요약 동작·활용</a>
   <a href="#s9">9 · 보관/조회 + v2.0</a>
   <a href="#s10">10 · 데이터 규모·실측</a>
@@ -526,25 +527,52 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
     <div class="callout key"><b>7-4. verifier 샘플링+임계값</b><br>검증 빈도는 <code>verify_sample_rate</code>(현재 1.0). verifier는 <code>grounded_score</code>만 매기고 <b>verdict는 코드가 임계값(0.7/0.4)으로 확정</b>(결정적).</div>
     <div class="callout key"><b>7-5. 공통 페르소나</b><br>4개 에이전트가 <code>_PERSONA</code>(존댓말·차분·서론 금지·사실 중심) 공유 → 모델이 달라도 <b>말투 일정</b>. 수치는 출처 콤마 표기 그대로, 기수는 근거 명칭 그대로.</div>
   </div>
+
+  <h3 id="multi">7-6. 복합·멀티턴 질문은 어떻게 처리되나</h3>
+  <p>"한 번에 2가지를 묻거나", "이전에 물어본 걸 이어서 묻거나", "도중에 다른 트랙으로 바꿔 묻는" 경우의 처리.</p>
+  <ol class="deep">
+    <li><b>복합 질문 (한 번에 2가지)</b> — <span class="d">라우터는 <b>intent 1개 + 플래그</b>(<code>financial_relevant</code>·<code>macro_relevant</code>)를 정한다.
+      예: "매출 얼마고 환율 영향은?" → <code>intent=qa</code> + 재무 + 거시 플래그 → corpus·재무·거시를 <b>병렬 결합</b>해 writer가 통합 답.
+      <b>한계</b>: intent는 1개라 "요약 + 정확수치" 혼합이나 서로 다른 주제 2개("위험요소와 배당정책 비교")는 단일 라우팅이라 약함 → 추후 <b>에이전트 쿼리 분해</b>(시나리오 D)로 보강(§15).</span></li>
+    <li><b>멀티턴 (이전 질문 이어받기)</b> — <span class="d">최근 대화(history)를 <b>라우터·writer에 함께</b> 넘긴다.
+      라우터가 생략된 주어·지시어("그럼 매출은?", "그거 더 자세히")를 직전 맥락으로 해석해 <code>search_query</code>를 정제하고,
+      writer도 history로 "그거/방금"을 푼다. <b>행동 평가의 멀티턴 케이스로 검증됨.</b></span></li>
+    <li><b>도중에 다른 트랙으로 전환</b> — <span class="d">라우터는 <b>매 턴 새로 분류</b>한다. 같은 방에서 이전엔 요약을 묻고 지금은 정확수치를 물으면
+      <code>intent</code>·플래그가 그 턴에 맞게 바뀐다(summary→qa, 재무 플래그 ON 등). 트랙은 <b>턴마다 독립적으로 결정</b>되고, out_of_scope(다른 회사) 가드도 매 턴 적용된다.</span></li>
+    <li><b>상태는 누가 갖나</b> — <span class="d">AI는 <b>stateless</b>. 세션·대화이력은 백엔드가 소유하고 매 요청의 <code>messages</code>로 넘긴다(마지막=현재 질문, 나머지=history 최근 10개). 그래서 AI는 같은 입력에 같은 출력(재현 가능).</span></li>
+  </ol>
 </section>
 
 <!-- 8 -->
 <section id="s8">
   <h2 class="sec"><span class="n">8</span>요약은 어떻게 이뤄지고 활용되나 <span class="tag">핵심</span></h2>
-  <h3>8-1. 현재 구현 — 실시간 RAG 요약</h3>
-  <p>"사업 내용 요약" → router=summary → corpus에서 <b>본문(text) 청크 우선 검색</b>(<code>summary_top_k=8</code>,
-   kind=text 필터) → summary_agent가 그 근거로 <b>그 자리에서</b> 서술 요약.</p>
-  <p class="sub">장점: 단순·항상 최신. 단점: 매 턴 재검색+재요약(비용·지연), 품질이 그때 검색에 좌우.</p>
-  <h3>8-2. 질문 종류별 분기</h3>
+  <div class="callout key"><b>핵심</b> — "비싼 요약은 <b>빌드때 1번</b>, 질의때는 <b>꺼내쓰기만</b>". 각 공시의 섹션을
+   미리 요약해 <code>summary_&lt;corp&gt;</code> 컬렉션에 저장하고, summary 질문은 그 <b>완성 요약</b>을 검색한다(사전요약 트랙, 구현 완료).</div>
+
+  <h3>8-1. 무엇을 기준으로 요약하나 (criteria)</h3>
+  <ol class="deep">
+    <li><b>① 단위 — 섹션(목차)별</b> <span class="d">DART 섹션 계층을 단위로. micro-섹션은 ~6,000자 묶음으로 합치고 공시 1건당 ~40묶음 상한(<code>summary_section_target_chars</code>·<code>summary_max_sections</code>), 200자 미만 스킵.</span></li>
+    <li><b>② 가중 — 분석 가치 높은 섹션 우선</b> <span class="d">사업의 내용·경영진단(MD&amp;A)·위험·주석·주요계약·연구개발을 올리고, 정관·임원명부·계열회사 같은 형식 섹션은 제외/후순위(<code>summarize._weight</code>). 표는 제외(수치는 RAG/재무 담당).</span></li>
+    <li><b>③ takeaway 지시</b> <span class="d">"실제 내용(사업·전략·리스크)을 3~6문장으로. 목차식 메타설명 금지, 정밀 수치 망라 금지(대표 1~2개만)." → 요약=서술 담당, 정확 수치=corpus/재무 담당으로 <b>역할 분리</b>.</span></li>
+  </ol>
+  <p class="sub">현재는 <b>"기본"</b>(섹션+가중+takeaway). 변화탐지·이벤트트리거는 추후 고급 단계(§15).</p>
+
+  <h3>8-2. 데이터 흐름 — 빌드(생성) → 질의(소비)</h3>
+<pre><span class="k">[빌드 타임 · 1회 ~$1-2]</span>  DART 원문 → 파서(Block) → 섹션 묶음(가중) → <span class="k">gpt-4o-mini 요약</span>
+                      → 임베딩 → <span class="k">summary_&lt;corp&gt;</span> 컬렉션 저장 (corpus와 별개 저장소)
+<span class="k">[질의 타임 · summary 질문]</span>  router(intent=summary) → <span class="k">summary_&lt;corp&gt; 벡터검색</span>(완성 요약 top-k)
+                      → summary_agent가 종합 → 답 (출처 rcept_no·섹션·dartUrl 유지)
+                      → 사전요약이 없으면 <span class="g">기존 corpus 실시간 RAG로 자동 폴백</span></pre>
+  <div class="callout note">저장소가 <b>2개로 분리</b>: <code>corpus_&lt;corp&gt;</code>(원문 청크·정확사실·QA) + <code>summary_&lt;corp&gt;</code>(사전요약·개요).
+   <b>qa(정확수치)·재무·거시·verifier·v2.0 계약·보관은 그대로</b> — summary 트랙만 바뀐다. 폴백이 있어 점진 적용이 안전.</div>
+
+  <h3>8-3. 효과</h3>
   <table>
-    <tr><th>질문</th><th>주역</th></tr>
-    <tr><td>개요/사업 요약</td><td>벡터(의미) + 본문 청크 (summary 트랙)</td></tr>
-    <tr><td>정확 수치("매출 얼마?")</td><td><b>재무 결합 노드(DART 정형 API)</b> 1급, RAG는 백업</td></tr>
-    <tr><td>혼합("매출과 환율 영향?")</td><td>qa 트랙 + 재무·거시 병렬 결합</td></tr>
+    <tr><th>항목</th><th>효과</th></tr>
+    <tr><td>요약 품질↑</td><td>섹션 전체를 보고 1번 정성껏 요약(검색이 우연히 집은 5청크가 아니라). "사업요약"이 빈약한 수치 표에 끌려가던 문제 해소.</td></tr>
+    <tr><td>질의 비용↓·속도↑</td><td>비싼 요약은 빌드때, 질의땐 꺼내기만.</td></tr>
+    <tr><td>출처 유지</td><td>요약 조각도 rcept_no·섹션·dartUrl을 그대로 → provenance 유지.</td></tr>
   </table>
-  <div class="callout warn"><b>8-3. 원안(미구현) — 사전요약 트랙</b><br>아키텍처 원안은 <b>빌드 시점에</b> 각 섹션을 싼 모델로 미리 요약해
-   별도 컬렉션 <code>summary_&lt;corp&gt;</code>에 저장하고, 질의 시엔 <b>완성된 요약을 꺼내쓰기</b>만 하는 것(요약 품질↑·질의 비용↓).
-   본 재구축은 아직 실시간 RAG로 처리 — <b>남은 핵심 개선점</b>(§15).</div>
 </section>
 
 <!-- 9 -->
@@ -601,7 +629,8 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
     <tr><th>항목</th><th>값</th></tr>
     <tr><td>대상 기업</td><td>삼성전자 00126380, 현대자동차 00164742</td></tr>
     <tr><td>적재 공시</td><td>정기보고서 <b>32건</b> (삼성 16 + 현대 16, 2021.12~2025.11)</td></tr>
-    <tr><td>총 청크</td><td><b>67,023</b> (삼성 23,444 + 현대 43,579), cosine</td></tr>
+    <tr><td>총 청크 (corpus)</td><td><b>67,023</b> (삼성 23,444 + 현대 43,579), cosine</td></tr>
+    <tr><td>사전요약 (summary)</td><td><b>1,188 요약</b> (삼성 380 + 현대 808), <code>summary_&lt;corp&gt;</code></td></tr>
     <tr><td>검증 샘플(삼성 20250311001085, 6.9M자)</td><td>블록 2,288(text395/table1,893)→청크 2,611, 평균 501자/최대 2,497자</td></tr>
     <tr><td>골든 핵심 수치(표 청크 안착)</td><td>매출 <b>300,870,903</b> · 영업이익 <b>32,725,961</b> · 전기 258,935,494</td></tr>
   </table>
@@ -629,7 +658,7 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
   </table>
   <div class="callout warn"><b>정직한 인정</b> — "고친" 것 중 일부는 <b>기존에도 있었고</b> 다시 만든 것:
    retrieve-then-read, 인용 정본화(provenance, 기존 <code>_reconcile</code>), 임계값 verdict(기존 <code>_verdict_from_score</code>),
-   재무·거시 결합. <b>사전요약 트랙은 기존엔 있었으나 재구축은 미구현</b>. → 진짜 가치는 "없던 걸 만든 것"이 아니라
+   재무·거시 결합. <b>사전요약 트랙은 기존에도 있었고, 재구축에서 (기본 단계로) 다시 구현</b>(§8). → 진짜 가치는 "없던 걸 만든 것"이 아니라
    <b>인제스트·검색 품질 + 프레임워크 현대화</b>.</div>
 </section>
 
@@ -700,7 +729,7 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
   <h2 class="sec"><span class="n">15</span>추후 개선점</h2>
   <table>
     <tr><th>개선</th><th>내용</th><th>가치</th></tr>
-    <tr><td>사전요약 트랙</td><td><code>summary_&lt;corp&gt;</code> 빌드타임 사전요약</td><td>요약 품질↑·질의 비용↓ (원안 완성)</td></tr>
+    <tr><td><b>사전요약 고급화</b><br><span class="d">(기본 구현 완료)</span></td><td>현재=섹션+가중+takeaway. 다음: <b>변화탐지</b>(직전 정기보고서 대비 새 위험·가이던스 변경) + <b>이벤트 트리거</b>(M&amp;A·소송·가이던스) + <b>토픽 태깅</b>(택소노미/BERTopic)</td><td>"이번 공시의 진짜 새 소식"을 takeaway로 → 요약 차별화</td></tr>
     <tr><td>에이전트 쿼리 분해</td><td>복합/비교 질문을 여러 검색으로 분해</td><td>terse·복합질의 약점 해소</td></tr>
     <tr><td>cross-encoder 리랭커</td><td>휴리스틱 → 전용 모델 재정렬</td><td>상위 정확도↑</td></tr>
     <tr><td>LLM Contextual(선택)</td><td>결정적 문맥 + 청크별 1문장 상황설명</td><td>검색 정밀도 추가↑(비용 변수)</td></tr>

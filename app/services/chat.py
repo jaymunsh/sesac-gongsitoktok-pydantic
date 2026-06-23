@@ -45,13 +45,20 @@ async def _retrieve(
     store = get_vector_store()
     query = r.search_query or ""
     where = _date_where(r)
-    if summary:
-        where = {"$and": [where, {"kind": "text"}]} if where else {"kind": "text"}
 
     async def corpus() -> list[Citation]:
-        k = s.summary_top_k if summary else s.top_k
+        if summary:
+            # 사전요약 트랙: summary_<corp>에서 '완성 요약'을 먼저 꺼낸다.
+            sums = await asyncio.to_thread(store.search_summaries, corp_code, query, s.summary_top_k)
+            if sums:
+                return sums
+            # 폴백: 사전요약이 아직 없으면 기존 실시간 corpus RAG(본문 청크 우선).
+            w = {"$and": [where, {"kind": "text"}]} if where else {"kind": "text"}
+            return await asyncio.to_thread(
+                store.search, corp_code, query, top_k=s.summary_top_k, where=w
+            )
         return await asyncio.to_thread(
-            store.search, corp_code, query, top_k=k, where=where, prefer_recent=r.prefer_recent
+            store.search, corp_code, query, top_k=s.top_k, where=where, prefer_recent=r.prefer_recent
         )
 
     tasks = [corpus()]

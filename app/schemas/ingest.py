@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-BlockKind = Literal["text", "table"]
+BlockKind = Literal["text", "table", "summary"]  # summary=사전요약 청크(summary_<corp>)
 
 
 class Block(BaseModel):

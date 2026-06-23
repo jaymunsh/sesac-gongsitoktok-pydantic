@@ -23,7 +23,7 @@ class Citation(BaseModel):
     section_title: Optional[str] = Field(None, description="해당 문단이 속한 섹션 제목")
     quote: str = Field(..., description="근거가 된 원문 인용")
     score: Optional[float] = Field(None, description="검색 유사도 점수")
-    kind: Literal["text", "table"] = Field("text", description="원문 종류(본문/표)")
+    kind: Literal["text", "table", "summary"] = Field("text", description="원문 종류(본문/표/사전요약)")
     # 어느 공시에서 나온 근거인지 (코퍼스 검색 시 채워짐) — RFP 2.1 출처 추적
     rcept_no: Optional[str] = Field(None, description="출처 공시 접수번호")
     report_nm: Optional[str] = Field(None, description="출처 공시명")

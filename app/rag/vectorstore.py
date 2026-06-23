@@ -30,6 +30,10 @@ def corpus_collection(corp_code: str) -> str:
     return f"corpus_{corp_code}"
 
 
+def summary_collection(corp_code: str) -> str:
+    return f"summary_{corp_code}"
+
+
 def _tokenize(text: str) -> list[str]:
     # 한글/영숫자 토큰 + 콤마 포함 숫자(300,870,903)를 한 토큰으로 보존
     return re.findall(r"[0-9][0-9,]*[0-9]|[0-9]|[가-힣]+|[A-Za-z]+", text.lower())
@@ -100,6 +104,66 @@ class VectorStore:
         except Exception:
             return False
         return coll.get(where={"rcept_no": rcept_no}, limit=1).get("ids", []) != []
+
+    # ── 사전요약(summary_<corp>) ─────────────────────────
+    def index_summaries(self, corp_code: str, chunks: list[Chunk]) -> int:
+        """사전요약 Chunk(kind='summary')를 summary_<corp> 컬렉션에 적재."""
+        if not chunks:
+            return 0
+        coll = self.client.get_or_create_collection(
+            summary_collection(corp_code), metadata={"hnsw:space": "cosine"}
+        )
+        embeddings = self.embedder.embed_documents([c.text for c in chunks])
+        coll.add(
+            ids=[c.chunk_id for c in chunks],
+            documents=[c.text for c in chunks],
+            embeddings=embeddings,
+            metadatas=[
+                {
+                    "raw_text": c.raw_text, "section_title": c.meta.section_title,
+                    "kind": "summary", "rcept_no": c.meta.rcept_no,
+                    "report_nm": c.meta.report_nm, "rcept_dt": c.meta.rcept_dt,
+                    "order": c.meta.order,
+                }
+                for c in chunks
+            ],
+        )
+        return len(chunks)
+
+    def has_summary(self, corp_code: str, rcept_no: str) -> bool:
+        try:
+            coll = self.client.get_collection(summary_collection(corp_code))
+        except Exception:
+            return False
+        return coll.get(where={"rcept_no": rcept_no}, limit=1).get("ids", []) != []
+
+    def search_summaries(self, corp_code: str, query: str, top_k: int | None = None) -> list[Citation]:
+        """사전요약 컬렉션에서 의미검색(벡터). 요약은 이미 간결·서술이라 벡터만으로 충분."""
+        s = get_settings()
+        k = top_k or s.summary_top_k
+        try:
+            coll = self.client.get_collection(summary_collection(corp_code))
+        except Exception:
+            return []
+        q_emb = self.embedder.embed_query(query)
+        res = coll.query(query_embeddings=[q_emb], n_results=k)
+        ids = res.get("ids", [[]])[0]
+        docs = res.get("documents", [[]])[0]
+        metas = res.get("metadatas", [[]])[0]
+        dists = res.get("distances", [[]])[0]
+        out: list[Citation] = []
+        for cid, doc, m, dist in zip(ids, docs, metas, dists):
+            m = m or {}
+            out.append(
+                Citation(
+                    chunk_id=cid, section_title=m.get("section_title") or None,
+                    quote=m.get("raw_text") or doc,
+                    score=round(1 - float(dist), 4) if dist is not None else None,
+                    kind="summary", rcept_no=m.get("rcept_no"),
+                    report_nm=m.get("report_nm"), rcept_dt=m.get("rcept_dt"),
+                )
+            )
+        return out
 
     # ── 전체 코퍼스 BM25 인덱스(지연 로드·캐시) ──────────────
     def _corpus_index(self, corp_code: str) -> dict | None:

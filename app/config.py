@@ -54,8 +54,9 @@ class Settings(BaseSettings):
     # --- 사전요약 ---
     small_disclosure_chars: int = 12000   # 이하면 '작은 공시' → 원문 통째 요약
     summary_top_k: int = 8
-    summary_section_target_chars: int = 6000
-    summary_max_sections: int = 40
+    summary_section_target_chars: int = 6000   # 사전요약 1묶음 목표 길이
+    summary_max_sections: int = 40             # 공시 1건당 요약(=LLM 호출) 상한
+    min_section_chars: int = 200               # 이보다 짧은 섹션은 요약 스킵
 
 
 @lru_cache
