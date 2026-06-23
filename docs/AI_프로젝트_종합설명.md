@@ -252,13 +252,22 @@ meta         : ChunkMeta(...)
 
 ---
 
-## 5. PydanticAI란 & 채택 이유 (vs LangGraph) ★
+## 5. PydanticAI란 & 채택 이유 (vs LangChain/LangGraph) ★
 
-### 5-1. PydanticAI란
-Pydantic 팀의 **타입세이프 에이전트 프레임워크**(V1, 2025). 핵심:
-- **구조화 출력 1급**: `Agent(output_type=PydanticModel)` → LLM 결과를 Pydantic으로 **검증 + 실패 시 자동 재시도**.
-- **deps(의존성 주입)**: 벡터스토어·설정 등을 타입 안전하게 주입.
-- **경량·Pydantic-native**: 우리 결과 스키마(RouterResult/QAResult/…)를 그대로 `output_type`으로 재사용.
+### 5-0. 짧은 역사 — 왜 프레임워크가 여러 개인가
+LLM 앱 프레임워크는 "무엇이 어려운가"가 바뀌며 진화했다.
+1. **LangChain (2022~)** — LLM에 검색·도구·메모리를 붙이는 **"부품 상자"**. RAG 붐을 이끌었으나 추상화 과다로 **무거움·추상화 누수** 비판.
+2. **LangGraph (2024~)** — LangChain 팀의 **상태 그래프(노드·엣지)**. 순환·분기·롤백·휴먼인더루프 같은 **복잡 워크플로**에 강함.
+3. **CrewAI/AutoGen (2024~)** — 역할극 멀티에이전트. 표현력↑이나 **단순 작업엔 과함**(기존이 이걸 단일 래퍼로 씀).
+4. **PydanticAI (2024말~2025)** — Pydantic(파이썬 검증 표준) 팀. "에이전트=모델+**구조화 출력(검증)**+도구/의존성"으로 단순화. **가볍고 타입 안전**.
+
+### 5-1. PydanticAI란 (상세)
+Pydantic 팀의 **타입세이프 에이전트 프레임워크**(V1, 2025). FastAPI가 웹에서 한 일(타입·검증 1급)을 LLM 에이전트에서. 핵심:
+- **구조화 출력 1급**: `Agent(output_type=Model)` → LLM 출력을 Pydantic으로 **검증, 안 맞으면 자동 재시도**.
+- **deps(의존성 주입)**: 벡터스토어·설정을 타입 안전하게 주입(`RunContext`).
+- **instructions/tools/model-agnostic**: 시스템 지시·도구·여러 provider를 동일 API로.
+- **Logfire 관찰성 1급**(같은 팀) · **pydantic-graph**(복잡 흐름 확장).
+- **경량·Pydantic-native**: 기존 스키마(RouterResult/QAResult)를 그대로 `output_type`으로 재사용.
 
 ### 5-2. 프레임워크 비교
 | 프레임워크 | 한 줄 | 우리 적합도 |
@@ -278,6 +287,21 @@ Pydantic 팀의 **타입세이프 에이전트 프레임워크**(V1, 2025). 핵�
 - 기존이 Pydantic 결과를 쓰고 있었기에(RouterResult 등) **교체 비용이 가장 적다**.
 
 > 더 복잡한 흐름(다단계 분기·롤백·휴먼인더루프)이 필요해지면 PydanticAI의 `pydantic-graph`로 확장 가능.
+
+### 5-4. 프레임워크를 쓰는 명확한 이점 (Spring 비유) — 왜 체감이 "드라마틱"하진 않은가
+**먼저 솔직히**: Spring을 써도 앱이 "하는 일"은 안 바뀐다. Spring은 **DI·트랜잭션·보일러플레이트 제거**로 **구조·안전성**을 준다. PydanticAI도 똑같다 — **"기능이 확 달라진" 체감이 없는 게 정상**이고, 대신 코드가 **안전·경량**해지고 실수를 프레임워크가 막는다. 진짜 품질 체감은 **인제스트(표파싱·Contextual)·검색(하이브리드)**에서 온다(§6). 프레임워크는 그 로직을 깔끔히 받치는 토대.
+
+| PydanticAI가 공짜로 주는 것 | Spring 대응 | 우리 코드에서 쓴 곳 | 안 쓰면 직접 해야 할 일 |
+|---|---|---|---|
+| **구조화 출력 검증+자동 재시도**(`output_type`) | `@Valid`+바인딩 | Router/QA/Summary/Verification **전부** | LLM JSON 파싱·검증·재요청 루프를 **매번 수작업** |
+| **의존성 주입**(`deps`) | DI(`@Autowired`) | `Deps`(벡터스토어·회사 컨텍스트) | 전역/수동 전달로 결합도↑ |
+| **모델 추상화**(provider-agnostic) | JPA가 DB 가림 | `"openai:gpt-5.1"`→`.env` 한 줄 교체 | provider별 SDK 분기 |
+| **관찰성 자동 계측**(Logfire) | Actuator/Micrometer | `instrument_pydantic_ai()` 한 줄→전 에이전트 trace | 호출마다 로깅·타이밍 수동 |
+| **타입 안전·IDE 지원** | 정적 타입 체크 | `resp.intent`·`resp.citations` 자동완성 | `dict["키"]` 추측, 런타임 오류 |
+| **정의 간결화** | Boot 오토컨피그 | 에이전트 5개=5줄 / 호출 1줄 | CrewAI식 보일러플레이트(§11-3) |
+
+**장점**: LLM→**검증된 타입 객체** 보장(파싱·재시도 무료) · 모델 교체 자유 · 관찰성 무료 · 기존 스키마 재사용(교체비용 최소) · 호출당 객체 0(경량).
+**단점·트레이드오프(정직)**: 프레임워크 의존(버전 추종) · 아주 단순한 1회 호출은 SDK 직접이 더 단순할 수도 · 복잡 그래프는 `pydantic-graph` 학습 · 비교적 신생(자료가 LangChain보다 적음).
 
 ---
 
@@ -543,9 +567,16 @@ summary 질문은 항상 `summary_<corp>`를 **먼저** 뒤지고, 결과가 안
 
 ## 9. 과제형 보관/조회 + v2.0 계약 연동
 
-### 9-1. 과제형(RFP 1급): 요약→근거 QA→보관→조회
-- `POST /api/v1/chat` — 근거 있는 답(qa/summary)을 SQLite(`analyses`)에 **자동 보관**.
-- `GET /api/analyses` — 보관 목록(마이페이지 카드). `GET /api/analyses/{id}` — 상세(근거·검증 포함).
+### 9-1. 과제형(RFP 1급): 요약→근거 QA→**보관→조회**
+RFP는 "단순 챗봇"이 아니라 **답을 저장하고 나중에 다시 꺼내보는 과제형**을 요구. 그래서 챗 답을 DB에 쌓고 목록·상세로 조회한다. (구현: `storage/db.py`+`api/routes.py`)
+
+| 엔드포인트 | 하는 일 | 비유 |
+|---|---|---|
+| `POST /api/v1/chat` | 챗 처리 + **근거 있는 답을 SQLite(`analyses`)에 자동 저장** | 질문하면 답하고 **기록 남김** |
+| `GET /api/analyses` | 저장된 분석 **목록**(id·회사·제목·요약 한 줄·시각) | "내 분석들" **목록 화면** |
+| `GET /api/analyses/{id}` | 분석 1건 **상세**(질문·답·근거·검증) | 눌러서 **자세히 보기** |
+
+> **"마이페이지 카드"** = 프론트(`gongsitoktok`)가 `GET /api/analyses` 결과를 카드 리스트로 보여주는 화면(프론트 영역). AI는 **저장·조회 API**만 제공.
 
 ### 9-2. v2.0 계약 (백엔드 `finance_v2` 드롭인 호환)
 내부 스키마와 분리된 **camelCase 와이어 계약**을 `contract.py` 어댑터로 변환 → 백엔드 코드 수정 없이 연동.
@@ -717,6 +748,39 @@ PYTHONPATH=. .venv/bin/python -m eval.eval_chat          # 행동
 PYTHONPATH=. .venv/bin/python -m eval.run_golden_inproc  # 회귀
 ```
 
+**예시로 보기 — ① 골든 파일 → ② 검증 코드 → ③ 실제 출력**
+```jsonc
+// ① eval/chat_golden_set.json (발췌)
+{ "_meta": { "purpose": "회귀 방지·동작 검증", "endpoint": "POST /api/v1/chat" },
+  "cases": [
+    { "id": "ss-num-opincome",
+      "company": { "corpCode": "00126380", "corpName": "삼성전자" },
+      "question": "삼성전자 영업이익 알려줘",
+      "expect": { "intent": "qa", "contains_any": ["43,601,051","32,725,961"] },
+      "severity": "must" } ] }
+```
+```python
+# ② eval/run_golden_inproc.py — 검증 로직(발췌)
+def evaluate(case, resp):
+    exp  = case["expect"]
+    text = resp.answer + " " + " ".join(c.quote for c in resp.citations)   # 답 + 근거 인용
+    if "intent" in exp and resp.intent.value != exp["intent"]:        ...  # intent 불일치 → 실패
+    if "contains_any" in exp and not any(s in text for s in exp["contains_any"]): ... # 문구 없음 → 실패
+    if "verdict_not" in exp and resp.verification.verdict.value == exp["verdict_not"]: ... # 금지 verdict
+    return (실패사유_없음, 실패사유목록)
+# 각 케이스를 handle_chat()에 넣고 evaluate → PASS/FAIL/WATCH 집계 (서버 불필요)
+```
+```text
+# ③ 실제 실행 출력(발췌)
+=== 챗 골든셋 14케이스 (인프로세스) ===
+  [PASS ] ss-num-opincome        | 숫자 트랙 - 영업이익(RAG exact-match)
+  [PASS ] ss-scope-other-company | 스코프 가드 - 다른 회사 질문
+  ...
+--- 결과 ---   must : 12/12 통과   watch : 2/2 통과
+✅ must 전부 통과
+```
+→ 파일에 케이스 한 줄 추가하면 바로 검증 대상. 미통과 시 사유(`intent=summary (기대 qa)` 등)가 함께 찍혀 디버깅 쉬움.
+
 ### 12-3. 결과 (현재)
 | 계층 | 케이스 | 결과 |
 |---|---|---|
@@ -726,7 +790,62 @@ PYTHONPATH=. .venv/bin/python -m eval.run_golden_inproc  # 회귀
 
 사전요약 트랙 도입 후에도 회귀 없음(요약 케이스 전부 통과). 상세는 `eval/EVAL_README.md`.
 
-### 12-4. 개발 일지 — 잡은 버그와 교훈
+**측정 방법 (코드 기준)**: `intent`=정확 일치 · `contains_any`=answer+모든 citation.quote 텍스트에 부분문자열 포함 · `has_number`=정규식 `\d{1,3}(,\d{3})+` · `verdict_not`=verdict(=grounded_score 임계값 0.7/0.4로 도출)가 금지값이면 실패 · `out_of_scope`/`macro_used`/`needs_clarification`=불리언 플래그 · `no_citations`=citations 길이 0 · 검색 `expect_any`=top-k의 (section_title+quote)에 첫 등장 순위 → `1/순위`로 MRR. **집계**: must 전부 통과 시 종료코드 0(CI), watch는 분리.
+
+### 12-4. 전체 케이스 목록 (무엇을 검사했나)
+실제 검사한 35개 케이스 전부. ✅=must 통과, 🔶=watch(약점·추적용).
+
+**① 회귀 골든 — 14건 · must 12/12**
+
+| 케이스 | 질문 | 검사 포인트 |
+|---|---|---|
+| ✅ ss-summary-overview | 삼성 회사 개요 요약 | intent=summary·verdict≠fail |
+| ✅ ss-summary-business | 삼성 사업 내용 요약 | 반도체·메모리·DX·DS·하만 중 포함 |
+| ✅ ss-num-revenue | 삼성 연간 매출액 | 300,870,903 / 333,605,938 |
+| ✅ ss-num-opincome | 삼성 영업이익 | 43,601,051 / 32,725,961 |
+| ✅ ss-num-assets | 삼성 자산총계 | 566,942,110 / 514,531,948 |
+| 🔶 ss-route-business-plain | 삼성 무슨 사업 해? | '요약' 없는 서술 → summary |
+| ✅ ss-scope-other-company | SK하이닉스 영업이익 | out_of_scope=true |
+| ✅ hd-summary-overview | 현대 회사 개요 요약 | intent=summary·verdict≠fail |
+| ✅ hd-summary-business | 현대 사업 내용 요약 | 자동차·전기차·제네시스 등 포함 |
+| ✅ hd-num-revenue | 현대 연간 매출액 | 175,231,153 |
+| ✅ hd-num-opincome | 현대 영업이익 | 숫자 포함·verdict≠fail |
+| ✅ hd-num-liabilities | 현대 부채총계 | 숫자 포함·verdict≠fail |
+| 🔶 hd-route-business-plain | 현대 무슨 사업 해? | summary 라우팅 |
+| ✅ hd-scope-other-company | 기아 매출 | out_of_scope=true |
+
+**② 행동 — 8건 · must 6/6**
+
+| 케이스 | 질문 | 검사 포인트 |
+|---|---|---|
+| ✅ multiturn-anaphora | (이전:영업이익) "그럼 매출액은?" | 멀티턴—history로 주어 해석, 숫자 답 |
+| ✅ macro-combine | 요즘 환율·금리 상황 | macro_used=true |
+| ✅ table-segment | 삼성 사업부문 어떻게 나뉘어? | DX·DS·부문 포함(표-인식) |
+| ✅ num-freshness-revenue | 현대 매출액 | 숫자 포함(값 미고정) |
+| ✅ smalltalk-thanks | 오 고마워 | intent=smalltalk·근거없음 |
+| ✅ scope-compare | 삼성 vs SK하이닉스 비교 | out_of_scope=true |
+| 🔶 clarify-ambiguous | 삼성 이익 얼마야? | '이익' 모호 → 되묻기(변동 허용) |
+| 🔶 unanswerable-future | 현대 내년 전망치 | 미래 전망 환각 대신 한계 |
+
+**③ 검색 — 13건 · must 11/11 hit@5(100%)**
+
+| 케이스 | 검색쿼리 | 정답 회수 기대 |
+|---|---|---|
+| 🔶 ss-ret-income-revenue | 연결 손익계산서 매출액 | 300,870,903 / 손익계산서 |
+| ✅ ss-ret-segment | 사업부문별 매출 DX DS | DX 부문 / DS 부문 / 부문별 |
+| ✅ ss-ret-business | 주요 사업 메모리 반도체 | DRAM / NAND / 메모리 |
+| ✅ ss-ret-harman | 하만 전장 디지털 콕핏 | Harman / 하만 / 콕핏 / 전장 |
+| ✅ ss-ret-dividend | 배당 정책 결산배당 | 배당에 관한 사항 / 배당 |
+| ✅ ss-ret-treasury | 자기주식 취득 처분 | 자기주식 |
+| ✅ ss-ret-largest | 최대주주 지분 현황 | 최대주주 |
+| ✅ ss-ret-rnd | 연구개발 실적 비용 | 연구개발 |
+| ✅ ss-ret-risk | 사업위험 재무위험관리 | 위험관리 / 재무위험 / 파생 |
+| 🔶 ss-ret-region | 지역별 매출 미주 유럽 | 지역 / 미주 / 유럽 (terse 약점) |
+| ✅ hd-ret-business | 주요 사업 자동차 제조 | 자동차 / 차량 / 사업의 내용 |
+| ✅ hd-ret-dividend | 배당 정책 결산배당 | 배당 |
+| ✅ hd-ret-rnd | 연구개발 친환경 전동화 | 연구개발 / 친환경 / 전동 |
+
+### 12-5. 개발 일지 — 잡은 버그와 교훈
 코드가 지금 모양인 **이유**는 대개 이 버그들에서 왔다. 증상 → 원인 → 수정.
 
 | 증상 | 원인 | 수정 / 교훈 |
