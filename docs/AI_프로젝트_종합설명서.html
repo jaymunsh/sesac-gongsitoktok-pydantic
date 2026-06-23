@@ -203,6 +203,26 @@ flowchart TB
     <tr><td><b>groundedScore</b> (정확도)</td><td>답이 근거에 <b>얼마나 충실한지</b>(0~1). 프론트 "정확도 %"로 표시(verifier 산출).</td></tr>
     <tr><td><b>verdict</b> (판정)</td><td>검증 결과 <b>pass/partial/fail</b>. groundedScore를 임계값(0.7/0.4)으로 코드가 확정.</td></tr>
   </table>
+  <p class="steptitle">시스템·데이터·평가 용어</p>
+  <table>
+    <tr><th>용어</th><th>쉬운 뜻</th></tr>
+    <tr><td><b>corpus</b> (코퍼스)</td><td>회사별 공시 <b>원문 청크 저장소</b>(<code>corpus_&lt;회사&gt;</code>). 정확 사실·QA용. (사전요약은 별도 <code>summary_&lt;회사&gt;</code>)</td></tr>
+    <tr><td><b>사전요약</b> (precompute summary)</td><td>빌드때 섹션을 미리 요약해 <code>summary_&lt;회사&gt;</code>에 저장 → 요약 질문에 꺼내 씀(매번 안 만듦).</td></tr>
+    <tr><td><b>인제스트</b> (ingest)</td><td>공시 원문을 파싱·청킹·임베딩해 <b>적재하는 빌드 단계</b>(1회, 큰 비용은 여기).</td></tr>
+    <tr><td><b>런타임</b> (runtime)</td><td>질문이 들어와 답하는 <b>실행 단계</b>(질문당, 푼돈).</td></tr>
+    <tr><td><b>Chroma</b></td><td>본 프로젝트가 쓰는 <b>벡터 데이터베이스</b>(임베딩 저장·검색).</td></tr>
+    <tr><td><b>라우터</b> (router)</td><td>질문의 <b>의도를 분류</b>하고 검색쿼리·플래그·기간을 정하는 첫 에이전트(gpt-4o-mini).</td></tr>
+    <tr><td><b>intent</b> (의도)</td><td>질문 종류: <code>qa</code>(사실·수치) / <code>summary</code>(요약) / <code>smalltalk</code>(잡담) / <code>out_of_scope</code>(다른 회사).</td></tr>
+    <tr><td><b>eval</b> (평가)</td><td>시스템이 잘 작동하는지 <b>자동 검증</b>하는 테스트 묶음. 본 프로젝트는 검색·행동·회귀 3계층.</td></tr>
+    <tr><td><b>골든셋</b> (golden set)</td><td>정답 기대값을 정해둔 <b>회귀 테스트 케이스</b> 모음(바뀌어도 안 깨지는지 확인).</td></tr>
+    <tr><td><b>hit@k / MRR</b></td><td>검색 평가 지표 — hit@k=정답이 상위 k개 안에 있나, MRR=정답 순위의 역수 평균(1에 가까울수록 좋음).</td></tr>
+    <tr><td><b>DART / OpenDART</b></td><td>금융감독원 <b>전자공시시스템</b> / 그 무료 <b>API</b>(공시 원문·정형재무). <code>fnlttSinglAcnt</code>=주요계정 재무 API.</td></tr>
+    <tr><td><b>ECOS</b></td><td>한국은행 경제통계 <b>API</b>(환율·기준금리·국고채·KOSPI 등 거시지표).</td></tr>
+    <tr><td><b>정기보고서</b></td><td>사업보고서·반기보고서·분기보고서(DART 공시유형 A). 본 프로젝트의 적재 대상.</td></tr>
+    <tr><td><b>토큰</b> (token)</td><td>LLM이 글을 처리하는 단위(대략 단어 조각). 비용·길이 계산 기준.</td></tr>
+    <tr><td><b>폴백</b> (fallback)</td><td>주 경로가 안 되면 <b>대체 경로</b>로 처리(예: 사전요약 없으면 corpus RAG로).</td></tr>
+    <tr><td><b>v2.0 계약</b></td><td>백엔드(Spring)와 합의한 <b>요청/응답 규격</b>(필드명·구조). 어댑터가 내부 스키마와 번역.</td></tr>
+  </table>
 </section>
 
 <!-- 2 -->
