@@ -648,6 +648,15 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
   <div class="callout note">저장소가 <b>2개로 분리</b>: <code>corpus_&lt;corp&gt;</code>(원문 청크·정확사실·QA) + <code>summary_&lt;corp&gt;</code>(사전요약·개요).
    <b>qa(정확수치)·재무·거시·verifier·v2.0 계약·보관은 그대로</b> — summary 트랙만 바뀐다. 폴백이 있어 점진 적용이 안전.</div>
 
+  <div class="callout warn"><b>"corpus 폴백"이 정확히 하는 일</b> — <code>summary_&lt;corp&gt;</code>가 비었을 때(그 회사 사전요약 미빌드),
+   <b>원문 청크에서 그 자리에서 요약을 새로 만든다</b>:
+   <ol style="margin:8px 0 4px">
+     <li><code>corpus_&lt;corp&gt;</code>에서 <b>원문 텍스트 청크</b>(<code>kind=text</code>)를 검색해 가져온다(완성 요약이 아니라 원문 그대로).</li>
+     <li>그 원문 청크들을 <code>summary_agent</code>에 근거로 넣어 <b>질의 시점에 요약을 생성</b>한다(= 사전요약 도입 <i>전</i>의 '실시간 RAG 요약').</li>
+   </ol>
+   즉 폴백은 "이미 만든 요약 꺼내쓰기"가 아니라 <b>"원문에서 즉석 요약"</b> — 더 느리고 비싸지만 사전요약이 없어도 항상 동작.
+   <b>두 경로 모두 최종 답은 summary_agent가 쓴다. 차이는 근거가 '완성 요약'(정상)이냐 '원문 청크'(폴백)냐.</b></div>
+
   <h3>8-3. 효과</h3>
   <table>
     <tr><th>항목</th><th>효과</th></tr>
