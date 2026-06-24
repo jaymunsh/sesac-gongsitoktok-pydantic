@@ -25,166 +25,325 @@
   "cases": [
     {
       "id": "ss-summary-overview",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "삼성전자 회사 개요 요약해줘",
       "behavior": "요약 트랙 - 회사 개요(서술)",
-      "expect": {"intent": "summary", "verdict_not": "fail"},
+      "expect": {
+        "intent": "summary",
+        "verdict_not": "fail"
+      },
       "severity": "must",
       "note": "서술 프롬프트로 개요 답변이 나오는지"
     },
     {
       "id": "ss-summary-business",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "삼성전자 사업 내용 요약해줘",
       "behavior": "요약 트랙 - 사업 내용(서술)",
-      "expect": {"intent": "summary", "contains_any": ["반도체", "메모리", "디스플레이", "DX", "DS", "가전", "모바일", "하만"]},
+      "expect": {
+        "intent": "summary",
+        "contains_any": [
+          "반도체",
+          "메모리",
+          "디스플레이",
+          "DX",
+          "DS",
+          "가전",
+          "모바일",
+          "하만"
+        ]
+      },
       "severity": "must",
       "note": "세그먼트 키워드가 서술에 잡히는지"
     },
     {
       "id": "ss-num-revenue",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "삼성전자 연간 매출액 얼마야?",
       "behavior": "숫자 트랙 - 매출(RAG exact-match)",
-      "expect": {"intent": "qa", "contains_any": ["300,870,903", "333,605,938"]},
+      "expect": {
+        "intent": "qa",
+        "contains_any": [
+          "300,870,903",
+          "333,605,938"
+        ]
+      },
       "severity": "must",
       "note": "숫자는 RAG로 정확히 (제56기 300,870,903 / 제57기 333,605,938 백만원)"
     },
     {
       "id": "ss-num-opincome",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "삼성전자 영업이익 알려줘",
       "behavior": "숫자 트랙 - 영업이익(RAG exact-match)",
-      "expect": {"intent": "qa", "contains_any": ["43,601,051", "32,725,961"]},
+      "expect": {
+        "intent": "qa",
+        "contains_any": [
+          "43,601,051",
+          "32,725,961"
+        ]
+      },
       "severity": "must",
       "note": "제57기 43,601,051 / 제56기 32,725,961 백만원"
     },
     {
       "id": "ss-num-assets",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "삼성전자 자산총계 얼마야?",
       "behavior": "숫자 트랙 - 자산총계(RAG exact-match)",
-      "expect": {"intent": "qa", "contains_any": ["566,942,110", "514,531,948"]},
+      "expect": {
+        "intent": "qa",
+        "contains_any": [
+          "566,942,110",
+          "514,531,948"
+        ]
+      },
       "severity": "must",
       "note": "제57기 566,942,110 / 제56기 514,531,948 백만원"
     },
     {
       "id": "ss-route-business-plain",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "삼성전자 무슨 사업 해?",
       "behavior": "라우팅 견고성 - '요약' 단어 없는 서술 질문",
-      "expect": {"intent": "summary", "verdict_not": "fail"},
+      "expect": {
+        "intent": "summary",
+        "verdict_not": "fail"
+      },
       "severity": "watch",
       "note": "알려진 약점: 과거 qa로 오라우팅되어 fail한 사례. 라우팅·검색 개선 추적용"
     },
     {
       "id": "ss-scope-other-company",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "SK하이닉스 작년 영업이익 알려줘",
       "behavior": "스코프 가드 - 다른 회사 질문",
-      "expect": {"out_of_scope": true},
+      "expect": {
+        "out_of_scope": true
+      },
       "severity": "must",
       "note": "방에 박힌 기업과 다른 회사 → outOfScope"
     },
-
     {
       "id": "hd-summary-overview",
-      "company": {"corpCode": "00164742", "corpName": "현대자동차"},
+      "company": {
+        "corpCode": "00164742",
+        "corpName": "현대자동차"
+      },
       "question": "현대자동차 회사 개요 요약해줘",
       "behavior": "요약 트랙 - 회사 개요(서술)",
-      "expect": {"intent": "summary", "verdict_not": "fail"},
+      "expect": {
+        "intent": "summary",
+        "verdict_not": "fail"
+      },
       "severity": "must",
       "note": "서술 프롬프트로 개요 답변이 나오는지"
     },
     {
       "id": "hd-summary-business",
-      "company": {"corpCode": "00164742", "corpName": "현대자동차"},
+      "company": {
+        "corpCode": "00164742",
+        "corpName": "현대자동차"
+      },
       "question": "현대자동차 사업 내용 요약해줘",
       "behavior": "요약 트랙 - 사업 내용(서술)",
-      "expect": {"intent": "summary", "contains_any": ["자동차", "차량", "완성차", "제네시스", "전기차", "모빌리티", "친환경"]},
+      "expect": {
+        "intent": "summary",
+        "contains_any": [
+          "자동차",
+          "차량",
+          "완성차",
+          "제네시스",
+          "전기차",
+          "모빌리티",
+          "친환경"
+        ]
+      },
       "severity": "must",
       "note": "세그먼트 키워드가 서술에 잡히는지"
     },
     {
       "id": "hd-num-revenue",
-      "company": {"corpCode": "00164742", "corpName": "현대자동차"},
+      "company": {
+        "corpCode": "00164742",
+        "corpName": "현대자동차"
+      },
       "question": "현대자동차 연간 매출액 얼마야?",
       "behavior": "숫자 트랙 - 매출(RAG exact-match)",
-      "expect": {"intent": "qa", "contains_any": ["175,231,153"]},
+      "expect": {
+        "intent": "qa",
+        "contains_any": [
+          "175,231,153"
+        ]
+      },
       "severity": "must",
       "note": "제57기 175,231,153 백만원 (관측값)"
     },
     {
       "id": "hd-num-opincome",
-      "company": {"corpCode": "00164742", "corpName": "현대자동차"},
+      "company": {
+        "corpCode": "00164742",
+        "corpName": "현대자동차"
+      },
       "question": "현대자동차 영업이익 알려줘",
       "behavior": "숫자 트랙 - 영업이익(RAG, 값 미고정)",
-      "expect": {"intent": "qa", "has_number": true, "verdict_not": "fail"},
+      "expect": {
+        "intent": "qa",
+        "has_number": true,
+        "verdict_not": "fail"
+      },
       "severity": "must",
       "note": "정확값 미관측 → intent=qa + 숫자 포함 + 비실패로 느슨 검증"
     },
     {
       "id": "hd-num-liabilities",
-      "company": {"corpCode": "00164742", "corpName": "현대자동차"},
+      "company": {
+        "corpCode": "00164742",
+        "corpName": "현대자동차"
+      },
       "question": "현대자동차 부채총계 얼마야?",
       "behavior": "숫자 트랙 - 부채총계(RAG, 값 미고정)",
-      "expect": {"intent": "qa", "has_number": true, "verdict_not": "fail"},
+      "expect": {
+        "intent": "qa",
+        "has_number": true,
+        "verdict_not": "fail"
+      },
       "severity": "must",
       "note": "정확값 미관측 → 느슨 검증"
     },
     {
       "id": "hd-route-business-plain",
-      "company": {"corpCode": "00164742", "corpName": "현대자동차"},
+      "company": {
+        "corpCode": "00164742",
+        "corpName": "현대자동차"
+      },
       "question": "현대자동차 무슨 사업 해?",
       "behavior": "라우팅 견고성 - '요약' 단어 없는 서술 질문",
-      "expect": {"intent": "summary", "verdict_not": "fail"},
+      "expect": {
+        "intent": "summary",
+        "verdict_not": "fail"
+      },
       "severity": "watch",
       "note": "라우팅·검색 개선 추적용"
     },
     {
       "id": "hd-scope-other-company",
-      "company": {"corpCode": "00164742", "corpName": "현대자동차"},
+      "company": {
+        "corpCode": "00164742",
+        "corpName": "현대자동차"
+      },
       "question": "기아 작년 매출 알려줘",
       "behavior": "스코프 가드 - 다른 회사 질문",
-      "expect": {"out_of_scope": true},
+      "expect": {
+        "out_of_scope": true
+      },
       "severity": "must",
       "note": "방에 박힌 기업과 다른 회사 → outOfScope"
     },
     {
       "id": "ss-period-shares",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "2024년 사업보고서 기준 보통주 발행 주식총수는 얼마나 돼?",
       "behavior": "기간 한정 질문 - 사업연도 필터 적용해도 corpus 근거가 살아있어야(E2E)",
-      "expect": {"intent": "qa", "has_number": true, "verdict_not": "fail"},
+      "expect": {
+        "intent": "qa",
+        "has_number": true,
+        "verdict_not": "fail"
+      },
       "severity": "must",
       "note": "bsns_year 사업연도 필터 회귀 가드(§12-5). 버그 시 corpus 0건→빈 거절(숫자 없음). 결정적 가드는 eval_retrieval ss-ret-fy-*"
     },
     {
       "id": "ss-fy-financial",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "2023년 삼성전자 영업이익 알려줘",
       "behavior": "기간 한정 재무 - 재무 트랙이 요청 사업연도(FY2023)를 조회(최신연도 아님)",
-      "expect": {"intent": "qa", "contains_any": ["6,566,976"], "verdict_not": "fail"},
+      "expect": {
+        "intent": "qa",
+        "contains_any": [
+          "6,566,976"
+        ],
+        "verdict_not": "fail"
+      },
       "severity": "must",
       "note": "재무 트랙이 date를 무시하고 최신연도만 주던 문제(§12-5 B) 가드. 제55기 영업이익 6,566,976 백만원"
     },
     {
       "id": "ss-fy-summary",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "2023년 삼성전자 사업 내용 요약해줘",
       "behavior": "기간 한정 요약 - summary 트랙도 사업연도 필터를 존중(빈 결과/회귀 없음)",
-      "expect": {"intent": "summary", "verdict_not": "fail"},
+      "expect": {
+        "intent": "summary",
+        "verdict_not": "fail"
+      },
       "severity": "must",
       "note": "summary가 where(사업연도)를 받도록 한 뒤 회귀 없음 확인(§12-5 B)"
     },
     {
       "id": "ss-gisu-shares",
-      "company": {"corpCode": "00126380", "corpName": "삼성전자"},
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
       "question": "제57기말 기준 보통주 발행 주식총수는 얼마나 돼?",
       "behavior": "기수 질의 - 제N기를 사업연도로 환산해 필터(삼성 제57기=FY2025)",
-      "expect": {"intent": "qa", "contains_any": ["5,919,637,922"], "verdict_not": "fail"},
+      "expect": {
+        "intent": "qa",
+        "contains_any": [
+          "5,919,637,922"
+        ],
+        "verdict_not": "fail"
+      },
       "severity": "must",
       "note": "기수→사업연도 매핑(라우터 앵커) 회귀 가드(트러블슈팅 #9). 제57기말 유통주식수 5,919,637,922(2025)"
+    },
+    {
+      "id": "ss-gisu-56-opincome",
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
+      "question": "삼성 제56기 영업이익",
+      "behavior": "기수 코드변환 - 제56기=FY2024(2023 아님), off-by-one 가드(#13)",
+      "expect": {
+        "intent": "qa",
+        "contains_any": [
+          "32,725,961"
+        ]
+      },
+      "severity": "must",
+      "note": "LLM이 제56기를 2023으로 오매핑하던 버그 가드 — 코드 결정적 변환으로 32,725,961(제56기) 정답"
     }
   ]
 }

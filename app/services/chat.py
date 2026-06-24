@@ -142,6 +142,7 @@ def _should_verify(question: str) -> bool:
 async def handle_chat(req: ChatRequest) -> ChatResponse:
     # 1) 라우팅
     r = (await router_agent.run(_router_prompt(req))).output
+    _apply_gisu(req, r)  # '제N기' → 사업연도 date를 코드가 결정적으로 확정(LLM 산수 불신)
 
     if r.intent == ChatIntent.SMALLTALK:
         return ChatResponse(
@@ -150,11 +151,20 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
             answer=r.reply or "안녕하세요. 공시에 대해 궁금한 점을 물어봐 주세요.",
         )
     if r.intent == ChatIntent.OUT_OF_SCOPE or r.out_of_scope:
-        name = r.detected_company or "다른 회사"
+        if r.detected_company:  # 다른 회사 질문 → 해당 방 안내
+            answer = (
+                f"이 방은 {req.company_name} 전용입니다. "
+                f"{r.detected_company} 관련 질문은 해당 방에서 해주세요."
+            )
+        else:  # 도메인 이탈(맛집·날씨·일반상식 등) → 역할 안내
+            answer = (
+                f"저는 {req.company_name}의 공시·재무 분석 어시스턴트입니다. "
+                "해당 회사의 공시·실적·사업 관련 질문을 해주세요."
+            )
         return ChatResponse(
             corp_code=req.corp_code, session_id=req.session_id,
             intent=ChatIntent.OUT_OF_SCOPE, out_of_scope=True, detected_company=r.detected_company,
-            answer=f"이 방은 {req.company_name} 전용입니다. {name} 관련 질문은 해당 방에서 해주세요.",
+            answer=answer,
         )
 
     # 2) 검색 + 거시 결합(병렬)
@@ -207,38 +217,31 @@ def _macro_date(r: RouterResult) -> str:
     return r.date_to or datetime.date.today().strftime("%Y%m%d")
 
 
-_GISU_RE = re.compile(r"제\s*\d+\s*기")  # '제57기' / '제 57 기'
+_GISU_RE = re.compile(r"제\s*(\d+)\s*기")  # '제57기' / '제 57 기' → 기수 숫자
 
 
-def _gisu_hint(corp_code: str, question: str) -> str:
-    """기수↔사업연도 환산표를 라우터에 주입 — '제57기말' 등 기수 질의를 연도로 변환하게.
+def _apply_gisu(req: ChatRequest, r: RouterResult) -> None:
+    """질문의 '제N기'를 **코드가 결정적으로** 사업연도→date로 변환해 r에 덮어쓴다.
 
-    라우터는 서력 연도("2024년")만 인식하므로, 기수(제N기)는 표로 매핑해 줘야
-    date_from/date_to(→bsns_year 필터)를 채운다. (보고서 §12-5, 트러블슈팅 #9)
-
-    기준점(기수↔연도)은 **DART 정형재무에서 도출**한다(`fiscal_anchor`, 캐시) — 같은
-    기수라도 회사마다 연도가 다르고(삼성 제57기=2025·현대 제57기=2024), 회사 추가 시
-    코드 변경이 없게. **질문에 기수 표현이 있을 때만** 주입한다 — 항상 주입하면 연도
-    없는 질문에도 라우터가 표에서 임의 연도를 골라 채우는 부작용이 있다(매출 질의 회귀로 확인).
+    왜 코드인가: 라우터(LLM)에게 기수→연도 산수를 맡기면 불안정하다 — 예) 삼성 '제56기'를
+    일관되게 2023(제55기)으로 오매핑(트러블슈팅 #13). 기준점은 DART 정형재무에서 얻고
+    (`fiscal_anchor`), 제N기 사업연도 = y0 + (N - g0)으로 계산. 회사마다 기수↔연도가 다르고
+    (삼성 제57기=2025·현대 제57기=2024) 코드 변경 없이 자동. 여러 기수면 최소~최대 연도 범위.
     """
-    if not _GISU_RE.search(question):
-        return ""
-    anchor = fiscal_anchor(corp_code)
+    nums = [int(n) for n in _GISU_RE.findall(req.question)]
+    if not nums:
+        return
+    anchor = fiscal_anchor(req.corp_code)
     if not anchor:
-        return ""
+        return
     g0, y0 = anchor
-    pairs = ", ".join(f"제{g0 + d}기={y0 + d}년" for d in range(-3, 3))
-    return (
-        f"[기수 환산] 이 회사 기수↔사업연도: {pairs}.\n"
-        "질문의 기수(예 '제57기말')를 위 표로 사업연도 Y로 바꿔 "
-        "date_from=Y0101, date_to=Y1231로 채운다.\n"
-    )
+    years = [y0 + (n - g0) for n in nums]
+    r.date_from, r.date_to = f"{min(years)}0101", f"{max(years)}1231"
 
 
 def _router_prompt(req: ChatRequest) -> str:
     hist = "\n".join(f"{t.role}: {t.content}" for t in req.history[-4:])
     return (
         f"[방 회사] {req.company_name} (corp_code={req.corp_code})\n"
-        f"{_gisu_hint(req.corp_code, req.question)}"
         f"[이전 대화]\n{hist or '(없음)'}\n\n[현재 질문]\n{req.question}"
     )
