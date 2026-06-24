@@ -896,17 +896,17 @@ def evaluate(case, resp):
 | 계층 | 케이스 | 결과 |
 |---|---|---|
 | ① 검색 | 15 (must 13 / watch 2) | **must 13/13 hit@5(100%) · MRR 0.933** |
-| ② 행동 | 8 (must 6 / watch 2) | **must 6/6 · watch 2/2** |
-| ③ 회귀(골든) | 18 (must 16 / watch 2) | **must 16/16 · watch 2/2** |
+| ② 행동 | 9 (must 7 / watch 2) | **must 7/7 · watch 2/2** |
+| ③ 회귀(골든) | 19 (must 17 / watch 2) | **must 17/17 · watch 2/2** |
 
 사전요약 트랙 도입 후에도 회귀 없음(요약 케이스 전부 통과). 상세는 `eval/EVAL_README.md`.
 
 **측정 방법 (코드 기준)**: `intent`=정확 일치 · `contains_any`=answer+모든 citation.quote 텍스트에 부분문자열 포함 · `has_number`=정규식 `\d{1,3}(,\d{3})+` · `verdict_not`=verdict(=grounded_score 임계값 0.7/0.4로 도출)가 금지값이면 실패 · `out_of_scope`/`macro_used`/`needs_clarification`=불리언 플래그 · `no_citations`=citations 길이 0 · 검색 `expect_any`=top-k의 (section_title+quote)에 첫 등장 순위 → `1/순위`로 MRR. **집계**: must 전부 통과 시 종료코드 0(CI), watch는 분리.
 
 ### 12-4. 전체 케이스 목록 (무엇을 검사했나)
-실제 검사한 41개 케이스 전부. ✅=must 통과, 🔶=watch(약점·추적용).
+실제 검사한 43개 케이스 전부. ✅=must 통과, 🔶=watch(약점·추적용).
 
-**① 회귀 골든 — 18건 · must 16/16**
+**① 회귀 골든 — 19건 · must 17/17**
 
 | 케이스 | 질문 | 검사 포인트 |
 |---|---|---|
@@ -928,8 +928,9 @@ def evaluate(case, resp):
 | ✅ ss-fy-financial | 2023년 삼성전자 영업이익 | 재무가 요청 사업연도(FY2023) 조회 — 6,566,976 |
 | ✅ ss-fy-summary | 2023년 삼성전자 사업 내용 요약 | 요약 트랙도 사업연도 필터 존중·회귀 없음 |
 | ✅ ss-gisu-shares | 제57기말 기준 보통주 발행 주식총수 | 기수→사업연도 환산(삼성 제57기=2025) — 5,919,637,922 |
+| ✅ ss-gisu-56-opincome | 삼성 제56기 영업이익 | 기수 코드변환 off-by-one 가드(제56기=2024) — 32,725,961 |
 
-**② 행동 — 8건 · must 6/6**
+**② 행동 — 9건 · must 7/7**
 
 | 케이스 | 질문 | 검사 포인트 |
 |---|---|---|
@@ -939,6 +940,7 @@ def evaluate(case, resp):
 | ✅ num-freshness-revenue | 현대 매출액 | 숫자 포함(값 미고정) |
 | ✅ smalltalk-thanks | 오 고마워 | intent=smalltalk·근거없음 |
 | ✅ scope-compare | 삼성 vs SK하이닉스 비교 | out_of_scope=true |
+| ✅ scope-offdomain | 압구정역 맛집 알려줘 | 공시·회사 무관 일반질문 차단(out_of_scope) |
 | 🔶 clarify-ambiguous | 삼성 이익 얼마야? | '이익' 모호 → 되묻기(변동 허용) |
 | 🔶 unanswerable-future | 현대 내년 전망치 | 미래 전망 환각 대신 한계 |
 
@@ -1006,7 +1008,7 @@ def evaluate(case, resp):
 3. **정확수치 = 재무결합** — "영업이익 얼마?" → DART 정형 API로 **43,601,051,000,000원** 정확 제시(+출처 접수번호·DART 링크).
 4. **거시결합** — "요즘 환율·금리 상황에서 실적 어때?" → `macroSnapshot`(환율·기준금리·국고채·KOSPI) 결합.
 5. **정확도(groundedScore)·provenance** — 모든 답에 근거 충실도 % + 출처 카드(접수번호·섹션·인용) + DART 원문 링크.
-6. **평가 수치** — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 16/16(18케이스).
+6. **평가 수치** — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 17/17(19케이스).
 7. **API 절약 로직** — 모델 티어링·retrieve-then-read·정형API·캐시(§13)로 "왜 싸고 정확한지" 설명.
 8. **X-Trace-Id 추적 + Logfire 콘솔** — 한 요청의 내부 추론(router→검색→writer→verifier) 타임라인을 trace로 시연.
 9. **스코프 가드** — 방 회사가 아닌/비교 질문을 차단(out_of_scope) → 객관성·범위 통제.

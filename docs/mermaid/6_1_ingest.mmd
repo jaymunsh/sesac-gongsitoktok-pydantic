@@ -1,0 +1,24 @@
+flowchart TB
+  X["OpenDART document.xml ZIP<br/><small>dart.fetch_document_xml — 태그 보존 raw XML</small>"]
+  X --> P["표-인식 파서<br/>parser.parse_document → list[Block]"]
+  P --> T["표 → Markdown 표<br/><small>행·열·COLSPAN 패딩 보존</small>"]
+  P --> B["본문 → 텍스트<br/><small>섹션 경로 추적 · 자간 정규화</small>"]
+  T --> C["청커 chunker.chunk_blocks → list[Chunk]<br/><small>본문 윈도우 800/120 · 표 헤더반복 분할(2400)</small>"]
+  B --> C
+  C --> CX["Contextual 문맥줄 주입<br/><small>text = [문맥] + 원문 / raw_text 별도 보관</small>"]
+  CX --> E["임베딩<br/>text-embedding-3-small (batch 256)"]
+  E --> DB[("Chroma 색인<br/>corpus_<corp> · cosine")]
+
+  P -. 사전요약 분기 .-> SB["섹션 묶음 · 가중<br/><small>사업·위험·MD&A 우선 / 표 제외</small>"]
+  SB --> SUM["gpt-4o-mini 요약<br/><small>takeaway 지시 · 빌드 1회</small>"]
+  SUM --> SE["임베딩"]
+  SE --> SDB[("summary_<corp><br/>사전요약")]
+
+  classDef code fill:#eafaf1,stroke:#0b9d6b,color:#1e2530;
+  classDef llm fill:#eef4ff,stroke:#2563eb,color:#1e2530;
+  classDef store fill:#f5eefe,stroke:#7c3aed,color:#1e2530;
+  classDef ext fill:#fdf6e3,stroke:#b7791f,color:#1e2530;
+  class P,T,B,C,CX,E,SB,SE code;
+  class SUM llm;
+  class DB,SDB store;
+  class X ext;

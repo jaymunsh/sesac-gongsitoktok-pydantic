@@ -1,0 +1,38 @@
+flowchart TB
+  subgraph SRC["데이터 소스 · 무료 API"]
+    direction LR
+    DART["OpenDART<br/>공시 원문 · 정형재무"]
+    ECOS["한국은행 ECOS<br/>환율 · 금리 · KOSPI"]
+  end
+  subgraph ING["인제스트 · 빌드 1회"]
+    direction LR
+    P1["표-인식 파싱"] --> P2["청킹"] --> P3["Contextual 주입"] --> P4["임베딩"]
+    P1 --> P5["사전요약<br/>gpt-4o-mini"]
+  end
+  VDB[("corpus_<회사><br/>원문 청크")]
+  SDB[("summary_<회사><br/>사전요약")]
+  subgraph RT["런타임 · 질문당"]
+    direction LR
+    RTR["라우터"] --> PAR{{"검색+재무+거시<br/>병렬"}} --> WR["작성"] --> VF["검증"]
+  end
+  FE["React<br/>gongsitoktok-react"] <--> BE["Spring<br/>gongsitoktok-spring"] <-->|v2.0 계약| API["FastAPI<br/>/api/v1/chat"]
+
+  DART --> P1
+  P4 --> VDB
+  P5 --> SDB
+  DART -. 정형재무 .-> PAR
+  ECOS -. 거시 .-> PAR
+  VDB --> PAR
+  SDB -. 요약질문 .-> PAR
+  API --> RTR
+  VF --> API
+  ECOS -. 날짜캐시 .-> STO[("SQLite<br/>거시 캐시")]
+
+  classDef llm fill:#eef4ff,stroke:#2563eb,color:#1e2530;
+  classDef code fill:#eafaf1,stroke:#0b9d6b,color:#1e2530;
+  classDef store fill:#f5eefe,stroke:#7c3aed,color:#1e2530;
+  classDef ext fill:#fdf6e3,stroke:#b7791f,color:#1e2530;
+  class RTR,WR,VF,P5 llm;
+  class P1,P2,P3,P4,PAR code;
+  class VDB,SDB,STO store;
+  class DART,ECOS,FE,BE ext;

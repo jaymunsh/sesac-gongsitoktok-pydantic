@@ -1034,8 +1034,8 @@ qa = (await qa_agent.run(prompt)).output</pre>
   <table>
     <tr><th>계층</th><th>무엇</th><th>비용</th><th>결과</th></tr>
     <tr><td><b>① 검색</b> (eval_retrieval)</td><td>정답 청크 회수율 hit@k·MRR — 표파싱·하이브리드·Contextual·<b>사업연도필터</b> 직접 측정</td><td><b>무료·결정적</b></td><td>must <b>13/13 hit@5(100%)</b>, MRR <b>0.933</b></td></tr>
-    <tr><td><b>② 행동</b> (eval_chat)</td><td>멀티턴·거시결합·표질의·되묻기·스코프비교·숫자신선도</td><td>LLM</td><td><b>6/6 must + 2 watch</b></td></tr>
-    <tr><td><b>③ 회귀</b> (run_golden_inproc)</td><td>18케이스 회귀 스모크(인텐트·정확수치·스코프·기간·기수)</td><td>LLM</td><td><b>16/16 must + 2 watch</b></td></tr>
+    <tr><td><b>② 행동</b> (eval_chat)</td><td>멀티턴·거시결합·표질의·되묻기·스코프(비교/도메인이탈)·숫자신선도</td><td>LLM</td><td><b>7/7 must + 2 watch</b></td></tr>
+    <tr><td><b>③ 회귀</b> (run_golden_inproc)</td><td>19케이스 회귀 스모크(인텐트·정확수치·스코프·기간·기수)</td><td>LLM</td><td><b>17/17 must + 2 watch</b></td></tr>
   </table>
   <ul>
     <li><b>검색 평가가 핵심</b>: LLM 없이 임베딩+BM25만 돌려 <b>공짜·결정적</b>으로 검색 품질을 격리 측정 → 재구축의 진짜 개선을 숫자로 증명. CI에서 매번 가능.</li>
@@ -1129,14 +1129,14 @@ def evaluate(case, resp):
   <table>
     <tr><th>계층</th><th>케이스</th><th>결과</th></tr>
     <tr><td>① 검색</td><td>15 (must 13 / watch 2)</td><td><b>must 13/13 hit@5(100%) · MRR 0.933</b></td></tr>
-    <tr><td>② 행동</td><td>8 (must 6 / watch 2)</td><td><b>must 6/6 · watch 2/2</b></td></tr>
-    <tr><td>③ 회귀(골든)</td><td>18 (must 16 / watch 2)</td><td><b>must 16/16 · watch 2/2</b></td></tr>
+    <tr><td>② 행동</td><td>9 (must 7 / watch 2)</td><td><b>must 7/7 · watch 2/2</b></td></tr>
+    <tr><td>③ 회귀(골든)</td><td>19 (must 17 / watch 2)</td><td><b>must 17/17 · watch 2/2</b></td></tr>
   </table>
   <p class="sub">사전요약 트랙 도입 후에도 회귀 없음(요약 케이스 전부 통과). 상세는 <code>eval/EVAL_README.md</code>.</p>
 
   <h3>12-4. 전체 케이스 목록 (무엇을 검사했나)</h3>
-  <p>실제로 검사한 41개 케이스 전부. ✅=must 통과, 🔶=watch(알려진 약점·추적용).</p>
-  <p class="steptitle">① 회귀 골든 (chat_golden_set) — 18건 · must 16/16</p>
+  <p>실제로 검사한 43개 케이스 전부. ✅=must 통과, 🔶=watch(알려진 약점·추적용).</p>
+  <p class="steptitle">① 회귀 골든 (chat_golden_set) — 19건 · must 17/17</p>
   <table>
     <tr><th>케이스</th><th>질문</th><th>검사 포인트</th></tr>
     <tr><td>✅ ss-summary-overview</td><td>삼성 회사 개요 요약</td><td>intent=summary · verdict≠fail</td></tr>
@@ -1157,8 +1157,9 @@ def evaluate(case, resp):
     <tr><td>✅ ss-fy-financial</td><td>2023년 삼성 영업이익</td><td>재무가 요청 사업연도(FY2023) 조회 — 6,566,976</td></tr>
     <tr><td>✅ ss-fy-summary</td><td>2023년 삼성 사업 내용 요약</td><td>요약 트랙도 사업연도 필터 존중·회귀 없음</td></tr>
     <tr><td>✅ ss-gisu-shares</td><td>제57기말 보통주 발행 주식총수</td><td>기수→사업연도 환산(삼성 제57기=2025) — 5,919,637,922</td></tr>
+    <tr><td>✅ ss-gisu-56-opincome</td><td>삼성 제56기 영업이익</td><td>기수 코드변환 off-by-one 가드(제56기=2024) — 32,725,961</td></tr>
   </table>
-  <p class="steptitle">② 행동 (chat_eval_set) — 8건 · must 6/6</p>
+  <p class="steptitle">② 행동 (chat_eval_set) — 9건 · must 7/7</p>
   <table>
     <tr><th>케이스</th><th>질문</th><th>검사 포인트</th></tr>
     <tr><td>✅ multiturn-anaphora</td><td>(이전: 영업이익) "그럼 매출액은?"</td><td>멀티턴 — history로 생략 주어 해석, 숫자 답</td></tr>
@@ -1167,6 +1168,7 @@ def evaluate(case, resp):
     <tr><td>✅ num-freshness-revenue</td><td>현대 매출액</td><td>숫자 포함(값 미고정·신선도)</td></tr>
     <tr><td>✅ smalltalk-thanks</td><td>오 고마워</td><td>intent=smalltalk · 근거 없음</td></tr>
     <tr><td>✅ scope-compare</td><td>삼성 vs SK하이닉스 비교</td><td>out_of_scope=true(비교 차단)</td></tr>
+    <tr><td>✅ scope-offdomain</td><td>압구정역 맛집 알려줘</td><td>out_of_scope=true(공시·회사 무관 일반질문 차단)</td></tr>
     <tr><td>🔶 clarify-ambiguous</td><td>삼성 이익 얼마야?</td><td>'이익' 모호 → 되묻기 유도(변동 허용)</td></tr>
     <tr><td>🔶 unanswerable-future</td><td>현대 내년 전망치</td><td>미래 전망 환각 대신 한계 밝히는지</td></tr>
   </table>
@@ -1233,7 +1235,7 @@ def evaluate(case, resp):
     <li><b>정확수치=재무결합</b> — "영업이익 얼마?" → DART 정형 API로 <b>43,601,051,000,000원</b> 정확 제시(+접수번호·DART 링크).</li>
     <li><b>거시결합</b> — "요즘 환율·금리 상황에서 실적 어때?" → <code>macroSnapshot</code>(환율·기준금리·국고채·KOSPI).</li>
     <li><b>정확도·provenance</b> — 모든 답에 근거 충실도 % + 출처 카드 + DART 원문 링크.</li>
-    <li><b>평가 수치</b> — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 16/16(18케이스).</li>
+    <li><b>평가 수치</b> — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 17/17(19케이스).</li>
     <li><b>API 절약 로직</b> — 모델 티어링·retrieve-then-read·정형API·캐시(§13)로 "왜 싸고 정확한지".</li>
     <li><b>X-Trace-Id + Logfire 콘솔</b> — 한 요청의 내부 추론(router→검색→writer→verifier) 타임라인 시연.</li>
     <li><b>스코프 가드</b> — 방 회사가 아닌/비교 질문 차단(out_of_scope) → 객관성·범위 통제.</li>
@@ -1333,7 +1335,7 @@ summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db</pre>
   (2026-06-23 기간 질의 버그 사건에서 함께 드러난 이슈들)</p>
 
   <details class="tgroup">
-  <summary>⚠️ 트러블슈팅 이슈 모음 (현재 11건)</summary>
+  <summary>⚠️ 트러블슈팅 이슈 모음 (현재 13건)</summary>
 
   <div class="tnote">
     <p class="sym"><span class="num">1.</span><span class="ts">2026-06-23 18:14</span>기간 질문("2024년 사업보고서 …")이 "자료 없음"·빈 답으로 돌아온다</p>
@@ -1387,7 +1389,7 @@ summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db</pre>
     <p class="sym"><span class="num">9.</span><span class="ts">2026-06-24 11:52</span>기수로 물으면("제57기말 …") 답을 못 찾는다 — 같은 질문을 "2025년"으로 하면 정상</p>
     <p class="cause"><span class="lc">원인</span> 라우터가 <b>서력 연도("2024년")만</b> 인식하고 <b>기수(제N기)는 사업연도로 변환하지 못한다</b>. 그래서 "제57기말"엔 <code>date_from/to</code>가 비어 <code>bsns_year</code> 필터가 안 걸리고, 전 연도 검색에서 랭킹이 엉뚱한 표("증권의 발행을 통한 자금조달 실적"·월별 주가·거래량)를 잡았다. 게다가 같은 "제57기"도 회사마다 사업연도가 다르다(<b>삼성=2025 · 현대=2024</b>) — 단순 매핑 불가.</p>
     <p class="cause"><span class="lf">해결</span> 라우터 프롬프트에 <b>기수↔사업연도 환산표</b>를 주입(<code>_gisu_hint</code>)하되, 그 기준점(기수↔연도)은 <b>DART 정형재무 <code>thstrm_nm</code>("제 57 기")에서 도출·캐시</b>한다(<code>fiscal_anchor</code>). 회사 추가 시 코드 변경 없이 자동 — "제57기"→해당 사업연도로 <code>date</code>를 채워 필터가 정상 작동 → 삼성 5,919,637,922주·현대 209,416,191주. 검증: <code>ss-gisu-shares</code>. <i>(참고: 제57기 사업보고서 20260310001404는 2026.03 공시라 corpus엔 미적재지만, 제57기말 유통주식수는 2025 반기/분기에 있어 답 가능.)</i></p>
-    <p class="fix"><span class="lc">⚠️ 자기수정(회고)</span> <b>처음엔 회사별 기수를 코드에 하드코딩</b>(<code>_GISU_ANCHOR = {"00126380": (56,2024), …}</code>)했는데, 이는 <b>잘못된 판단이었다</b> — ①회사 추가 때마다 손으로 박아야 해 확장성이 없고 ②"제N기"를 안 쓰거나 결산월이 다른 회사엔 안 맞으며 ③무엇보다 <b>공시(DART)에 이미 있는 정보를 코드에 베낀 것</b>이었다. 지적을 받아 <b>DART에서 도출하는 방식으로 교체</b>했다. <i>교훈: 외부 권위 데이터가 있으면 코드에 박지 말고 그 출처에서 끌어와라.</i></p>
+    <p class="fix"><span class="lc">⚠️ 자기수정(회고)</span> <b>처음엔 회사별 기수를 코드에 하드코딩</b>(<code>_GISU_ANCHOR = {"00126380": (56,2024), …}</code>)했는데, 이는 <b>잘못된 판단이었다</b> — ①회사 추가 때마다 손으로 박아야 해 확장성이 없고 ②"제N기"를 안 쓰거나 결산월이 다른 회사엔 안 맞으며 ③무엇보다 <b>공시(DART)에 이미 있는 정보를 코드에 베낀 것</b>이었다. 지적을 받아 <b>DART에서 도출하는 방식으로 교체</b>했다. <i>교훈: 외부 권위 데이터가 있으면 코드에 박지 말고 그 출처에서 끌어와라.</i> <b>→ 그 뒤 LLM에게 환산 산수를 맡긴 게 또 불안정해(#13), 변환 자체를 코드로 옮겨 최종 안정화.</b></p>
   </div>
 
   <div class="tnote">
@@ -1400,6 +1402,18 @@ summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db</pre>
     <p class="sym"><span class="num">11.</span><span class="ts">2026-06-24 11:52</span>"주요 사업의 내용 요약"인데 엉뚱한 섹션(재무위험·주석)을 답한다 — 원하는 건 DX/DS/SDC/Harman 사업 개요</p>
     <p class="cause"><span class="lc">원인</span> 원하던 "I. 회사의 개요/II. 사업의 내용 > 사업의 개요" 요약은 <code>summary_&lt;corp&gt;</code>에 <b>분명히 존재</b>한다(DX/DS/SDC/Harman 포함). 그런데 <b>요약 트랙이 벡터 단독</b> 검색이라, "주요 사업의 내용"처럼 섹션 지정형 질의에 점수가 <b>0.41대로 평평</b>해 변별이 안 됐다 — 경영진단·재무제표 주석·위험관리 요약이 사업 개요를 눌러 상위를 차지(정작 사업 개요는 7위). corpus는 하이브리드인데 <b>요약 트랙만 BM25가 빠져</b> 있던 비대칭.</p>
     <p class="fix"><span class="lf">해결</span> <code>search_summaries</code>를 corpus와 동일하게 <b>하이브리드(벡터 ∪ BM25 → RRF)</b>로 전환(BM25 인덱스 빌더를 컬렉션 공용으로 일반화). BM25가 "주요 사업의 내용"→"사업의 개요"를 글자 일치로 끌어올려, 답변이 안정적으로 <b>DX/DS 부문 개요</b>로 시작(3회 모두 사업키워드 4개). 골든 16/16 회귀 0. <i>(잔여: 라우터가 "사업보고서 주요사업"식 필러를 섞으면 BM25가 희석되고 '주석'이 끼는 경우가 있어 쿼리 정제는 추가 개선 여지 — §15.)</i></p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">12.</span><span class="ts">2026-06-24 17:30</span>회사·공시와 무관한 질문("압구정역 맛집")에 그냥 답해버린다</p>
+    <p class="cause"><span class="lc">원인</span> 스코프 가드가 <b>"다른 회사" 질문만</b> out_of_scope로 막고 있었다. "맛집·날씨·코딩" 같은 <b>도메인 이탈 질문</b>은 라우터가 <code>smalltalk</code>으로 분류 → writer가 일반지식으로 <b>자유롭게 답(환각)</b>. (공시 어시스턴트가 맛집을 추천하는 셈)</p>
+    <p class="fix"><span class="lf">해결</span> 라우터 지시문에 <b>out_of_scope ③: 공시·재무·회사 사업과 무관한 일반 질문</b>을 추가하고, smalltalk을 '안녕·고마워' 인사로 한정("도메인 밖 질문에 일반지식으로 답하지 마라"). <code>chat.py</code>는 out_of_scope 응답을 <b>'다른 회사'와 '도메인 이탈'로 분기</b> — 후자는 "저는 {회사} 공시·재무 분석 어시스턴트입니다…"로 안내. 검증: 행동 케이스 <code>scope-offdomain</code>(맛집·날씨·코딩 차단) 추가.</p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">13.</span><span class="ts">2026-06-24 18:30</span>"제56기 영업이익"을 물으면 제55기·제54기 수치가 나오고 "제56기는 근거에 없음"이라 답한다</p>
+    <p class="cause"><span class="lc">원인</span> #9에서 기수→사업연도 환산을 <b>라우터(LLM)에게 표로 맡겼는데</b>, LLM 산수가 불안정했다 — 삼성 '제56기'를 <b>일관되게 2023(제55기)으로 오매핑</b>(5/5). 그 결과 재무 트랙이 2023년(제55기 6,566,976·제54기 43,376,630)을 조회해, 정작 제56기(2024)는 "근거에 없음"이 됐다. <i>(제57기는 우연히 맞아 안 드러났을 뿐)</i></p>
+    <p class="fix"><span class="lf">해결</span> 기수→연도 변환을 <b>LLM에서 코드로</b> 옮겼다(<code>_apply_gisu</code>): 질문의 '제N기'를 정규식으로 뽑아 <code>fiscal_anchor</code>로 <b>연도 = y0 + (N − g0)</b> 결정적 계산 → <code>date</code>를 코드가 확정(LLM 산수 불신). 삼성 제56기→2024·제57기→2025·현대 제57기→2024 모두 정확. 결과: 제56기 영업이익 <b>32,725,961,000,000원</b> 정답. 검증: 골든 <code>ss-gisu-56-opincome</code>(off-by-one 가드). <i>→ #9의 LLM 힌트 방식을 이 코드 방식이 대체.</i></p>
   </div>
   </details>
 

@@ -1,0 +1,7 @@
+flowchart LR
+  A["① 수집<br/>OpenDART"] --> B["② 구조보존 파싱<br/>표-인식"] --> C["③ 청킹<br/>+Contextual"] --> D["④ 하이브리드 인덱스<br/>벡터+BM25"] --> E["⑤ 검색<br/>+리랭킹·메타필터"] --> F["⑥ 근거內 생성<br/>+인용"] --> G["⑦ 검증<br/>provenance"]
+  XBRL["정형재무 · 거시<br/>DART/ECOS"] -. 결합 .-> E
+  classDef code fill:#eafaf1,stroke:#0b9d6b,color:#1e2530;
+  classDef ext fill:#fdf6e3,stroke:#b7791f,color:#1e2530;
+  class A,B,C,D,E,F,G code;
+  class XBRL ext;

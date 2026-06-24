@@ -1,0 +1,24 @@
+flowchart TB
+  REQ["ChatV2Request (v2.0)"] --> ADP["contract.to_internal"] --> RTR["router_agent · gpt-4o-mini<br/><small>intent · search_query · 기간 · flag</small>"]
+  RTR -->|smalltalk / out_of_scope| OUT["즉시 응답<br/><small>근거 불필요</small>"]
+  RTR -->|summary| SS["summary_<corp> 검색<br/><small>완성 요약 · 없으면 corpus 폴백</small>"]
+  RTR -->|qa| GA{{"asyncio.gather · 병렬<br/><small>부분실패 graceful</small>"}}
+  GA --> C1["corpus 하이브리드 검색"]
+  GA --> C2["재무 결합<br/><small>DART 정형 fnlttSinglAcnt</small>"]
+  GA --> C3["거시 결합<br/><small>ECOS</small>"]
+  SS --> WR["writer gpt-5.1<br/>또는 summary gpt-4o-mini<br/><small>근거 안에서만 작성</small>"]
+  C1 --> WR
+  C2 --> WR
+  C3 --> WR
+  WR --> PRV["provenance 고정<br/><small>코드가 검색한 실제 근거 citations[:5]</small>"]
+  PRV --> VF["verifier · o4-mini<br/><small>샘플링 → grounded_score</small>"]
+  VF --> VD["verdict = 임계값(0.7/0.4)<br/><small>코드가 확정</small>"]
+  VD --> RES["contract.to_v2<br/>→ ChatV2Response"]
+  RES --> STO[("SQLite 보관")]
+
+  classDef llm fill:#eef4ff,stroke:#2563eb,color:#1e2530;
+  classDef code fill:#eafaf1,stroke:#0b9d6b,color:#1e2530;
+  classDef store fill:#f5eefe,stroke:#7c3aed,color:#1e2530;
+  class RTR,WR,VF llm;
+  class ADP,GA,C1,C2,C3,SS,PRV,VD,RES code;
+  class STO store;
