@@ -9,6 +9,7 @@ import asyncio
 import datetime
 import hashlib
 import logging
+import re
 
 from app.agents.agents import (
     format_citations,
@@ -30,7 +31,7 @@ from app.schemas.disclosure import (
     VerificationVerdict,
 )
 from app.services import macro
-from app.services.financials import fetch_financial_citations_async
+from app.services.financials import fetch_financial_citations_async, fiscal_anchor
 from app.rag.vectorstore import get_vector_store
 
 log = logging.getLogger(__name__)
@@ -206,9 +207,38 @@ def _macro_date(r: RouterResult) -> str:
     return r.date_to or datetime.date.today().strftime("%Y%m%d")
 
 
+_GISU_RE = re.compile(r"제\s*\d+\s*기")  # '제57기' / '제 57 기'
+
+
+def _gisu_hint(corp_code: str, question: str) -> str:
+    """기수↔사업연도 환산표를 라우터에 주입 — '제57기말' 등 기수 질의를 연도로 변환하게.
+
+    라우터는 서력 연도("2024년")만 인식하므로, 기수(제N기)는 표로 매핑해 줘야
+    date_from/date_to(→bsns_year 필터)를 채운다. (보고서 §12-5, 트러블슈팅 #9)
+
+    기준점(기수↔연도)은 **DART 정형재무에서 도출**한다(`fiscal_anchor`, 캐시) — 같은
+    기수라도 회사마다 연도가 다르고(삼성 제57기=2025·현대 제57기=2024), 회사 추가 시
+    코드 변경이 없게. **질문에 기수 표현이 있을 때만** 주입한다 — 항상 주입하면 연도
+    없는 질문에도 라우터가 표에서 임의 연도를 골라 채우는 부작용이 있다(매출 질의 회귀로 확인).
+    """
+    if not _GISU_RE.search(question):
+        return ""
+    anchor = fiscal_anchor(corp_code)
+    if not anchor:
+        return ""
+    g0, y0 = anchor
+    pairs = ", ".join(f"제{g0 + d}기={y0 + d}년" for d in range(-3, 3))
+    return (
+        f"[기수 환산] 이 회사 기수↔사업연도: {pairs}.\n"
+        "질문의 기수(예 '제57기말')를 위 표로 사업연도 Y로 바꿔 "
+        "date_from=Y0101, date_to=Y1231로 채운다.\n"
+    )
+
+
 def _router_prompt(req: ChatRequest) -> str:
     hist = "\n".join(f"{t.role}: {t.content}" for t in req.history[-4:])
     return (
         f"[방 회사] {req.company_name} (corp_code={req.corp_code})\n"
+        f"{_gisu_hint(req.corp_code, req.question)}"
         f"[이전 대화]\n{hist or '(없음)'}\n\n[현재 질문]\n{req.question}"
     )

@@ -45,6 +45,7 @@
     font-size:12.7px;line-height:1.55;font-family:"SF Mono",Menlo,Consolas,monospace;color:#243044}
   pre .c{color:#8a93a3}      /* comment */
   pre .k{color:#b1500a}      /* keyword/label */
+  pre .s{color:#0b7a4b}      /* string */
   pre .g{color:#0b8a5e}      /* good */
   table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.3px}
   th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
@@ -606,6 +607,15 @@ score[id] = (1-w)/(60+rank_vec) + w/(60+rank_bm25)
     <div class="box good"><h4>현재 — 진짜 하이브리드</h4><p class="sub">벡터 top-k <b>와</b> 전체 BM25 top-k의 <b>합집합</b>을 RRF 융합 → 한쪽에만 있어도 생존. 숫자 토큰(<code>300,870,903</code>) 보존 토크나이저</p></div>
   </div>
 
+  <p class="steptitle">이전(가짜) → 현재(진짜) 개선 예시 — 같은 질문이 어떻게 달라지나</p>
+  <table>
+    <tr><th>질문/쿼리</th><th>이전 (벡터 후보 안에서만 BM25)</th><th>현재 (벡터 ∪ 전체 BM25)</th></tr>
+    <tr><td><b>정확 수치</b> "영업이익 32,725,961"</td><td>숫자가 벡터 top-20 밖이면 <b>유실</b> → 못 찾음</td><td>BM25가 <code>32,725,961</code> 토큰을 <b>글자 그대로</b> 매칭 → 회수</td></tr>
+    <tr><td><b>드문 고유명사</b> "하만 콕핏 전장"</td><td>의미 벡터가 분산돼 놓치기도</td><td>BM25가 희소어 'Harman·콕핏'을 정확 매칭(eval <code>ss-ret-harman</code> hit@1)</td></tr>
+    <tr><td><b>개념+키워드</b> "지역별 매출 미주 유럽"(§12-5 버그)</td><td>RRF 가중 0.6/0.4라 벡터 5개가 BM25 1위를 눌러 <b>엉뚱한 주주현황</b></td><td>동등가중(0.5)으로 1:1 교차 → 정상</td></tr>
+  </table>
+  <div class="callout key">한 줄 직관 — 벡터는 <b>뜻</b>(개념·서술)에 강하고 숫자·고유명사엔 약하다 → BM25가 그 빈틈을 <b>글자 일치</b>로 메운다. 정답이 한쪽 후보에만 있어도 합집합이라 생존. 효과는 검색 must <b>13/13 hit@5(100%)·MRR 0.933</b>.</div>
+
   <h3 id="walk">6-4. End-to-End 워크스루 — 3가지 시나리오</h3>
   <p>한 질문이 들어와서 답이 나가기까지 <b>실제 값으로</b> 따라가 본다. 질문 종류마다 <b>흐르는 길이 다르다</b>.</p>
   <p class="steptitle">시나리오 A — 정확 수치 (재무 결합) · "삼성전자 영업이익 알려줘"</p>
@@ -698,7 +708,8 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
   <div class="callout note"><b>왜</b> — 에이전트에 검색 툴을 주면 (a)환각 (b)비용↑ (c)비결정성. 검색을 코드가 결정적으로 끝내면
    <b>근거가 고정</b>돼 재현 가능·저렴(실무 정확성-우선 RAG의 표준).</div>
   <div class="grid2">
-    <div class="callout key"><b>7-2. output_type</b><br><code>Agent(output_type=QAResult)</code>면 출력이 스키마로 <b>검증</b>되고 틀리면 <b>자동 재시도</b>. JSON 깨짐/필드 누락을 프레임워크가 막음.</div>
+    <div class="callout key"><b>7-2. output_type — 검증 + 자동 재시도</b><br><code>Agent(output_type=QAResult)</code>면 출력이 스키마로 <b>검증</b>되고 틀리면 <b>자동 재시도</b>. JSON 깨짐/필드 누락을 프레임워크가 막음.<br>
+    <b>작동(재시도 루프)</b>: ① <b>스키마 주입</b> — QAResult를 JSON 스키마(툴 정의)로 변환해 "이 형식으로만 답하라" 지시 → ② <b>검증</b> — 응답을 QAResult로 파싱(맞으면 <code>.output</code>, 틀리면 <code>ValidationError</code>) → ③ <b>자동 재시도</b> — 실패 시 그 오류를 LLM에 되돌려("citations가 리스트여야 한다") 수정본 재생성, 최대 횟수까지. 우리는 파싱·재시도 코드를 한 줄도 안 쓴다(CrewAI는 <code>_as_pydantic</code> 수동 추출 필요, §11-2).</div>
     <div class="callout key"><b>7-3. provenance 고정</b><br>에이전트가 인용을 못 지어내게, 출처는 <b>코드가 검색한 실제 근거</b>(<code>citations[:5]</code>)로 고정. 재무 정형수치가 앞에 배치돼 항상 포함.</div>
     <div class="callout key"><b>7-4. verifier 샘플링+임계값</b><br>검증 빈도는 <code>verify_sample_rate</code>(현재 1.0). verifier는 <code>grounded_score</code>만 매기고 <b>verdict는 코드가 임계값(0.7/0.4)으로 확정</b>(결정적).</div>
     <div class="callout key"><b>7-5. 공통 페르소나</b><br>4개 에이전트가 <code>_PERSONA</code>(존댓말·차분·서론 금지·사실 중심) 공유 → 모델이 달라도 <b>말투 일정</b>. 수치는 출처 콤마 표기 그대로, 기수는 근거 명칭 그대로. <small>(↓ 7-5-1 실제 내용)</small></div>
@@ -754,7 +765,7 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
   <h3>8-2. 데이터 흐름 — 빌드(생성) → 질의(소비)</h3>
 <pre><span class="k">[빌드 타임 · 1회 ~$1-2]</span>  DART 원문 → 파서(Block) → 섹션 묶음(가중) → <span class="k">gpt-4o-mini 요약</span>
                       → 임베딩 → <span class="k">summary_&lt;corp&gt;</span> 컬렉션 저장 (corpus와 별개 저장소)
-<span class="k">[질의 타임 · summary 질문]</span>  router(intent=summary) → <span class="k">summary_&lt;corp&gt; 벡터검색</span>(완성 요약 top-k)
+<span class="k">[질의 타임 · summary 질문]</span>  router(intent=summary) → <span class="k">summary_&lt;corp&gt; 하이브리드 검색</span>(벡터∪BM25, 완성 요약 top-k)
                       → summary_agent가 종합 → 답 (출처 rcept_no·섹션·dartUrl 유지)
                       → 사전요약이 없으면 <span class="g">기존 corpus 실시간 RAG로 자동 폴백</span></pre>
   <div class="callout note">저장소가 <b>2개로 분리</b>: <code>corpus_&lt;corp&gt;</code>(원문 청크·정확사실·QA) + <code>summary_&lt;corp&gt;</code>(사전요약·개요).
@@ -793,6 +804,16 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
     <tr><td>질의 비용↓·속도↑</td><td>비싼 요약은 빌드때, 질의땐 꺼내기만.</td></tr>
     <tr><td>출처 유지</td><td>요약 조각도 rcept_no·섹션·dartUrl을 그대로 → provenance 유지.</td></tr>
   </table>
+
+  <h3>8-4. 수치 질문이 오면 — 요약이 아니라 '정확 트랙'으로 (역할 분리)</h3>
+  <p class="sub">요약 모델(gpt-4o-mini)이 빈약한 수치 표에 끌려가던 문제(§8-3)를, <b>요약은 서술만·정확 수치는 별도 트랙</b>으로 갈라 해결했다. 같은 방에서 "삼성전자 영업이익 얼마야?"가 오면:</p>
+  <ol class="deep">
+    <li><b>라우터</b> — <span class="d"><code>intent=qa</code>(요약 아님) + <code>financial_relevant=true</code> → 사전요약(<code>summary_&lt;corp&gt;</code>)은 <b>안 탐</b>.</span></li>
+    <li><b>정확 트랙 병렬</b>(<code>asyncio.gather</code>) — <span class="d">ⓐ corpus 하이브리드(숫자에 강한 BM25) + ⓑ <b>재무 API(<code>fnlttSinglAcnt</code>)</b>가 연결 영업이익을 <code>score=1.0</code> 근거로 <b>맨 앞 배치</b>(quote에 실제 기수 '제57기' 포함).</span></li>
+    <li><b>writer(gpt-5.1)</b> — <span class="d">"영업이익은 제57기 43,601,051,000,000원…"(출처 콤마 표기 그대로, 조/억 변환 금지).</span></li>
+    <li><b>검증·보관</b> — <span class="d">verdict=pass + 출처 카드·DART 링크.</span></li>
+  </ol>
+  <div class="callout key">턴마다 라우터가 갈라준다 — "사업 내용 요약해줘"는 <b>summary 트랙(서술)</b>, "영업이익 얼마야"는 <b>qa+재무 트랙(정확 수치)</b>. 요약 트랙엔 본문(<code>kind=text</code>)만 들어가 수치 표에 안 끌려가고, 정확 숫자는 정형 API가 결정적으로 책임진다.</div>
 </section>
 
 <!-- 9 -->
@@ -885,6 +906,27 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
     <tr><td>멀티에이전트 협업</td><td>안 씀(단일 래퍼로 전락)</td><td>동일 목적, 더 경량</td></tr>
   </table>
 
+  <p class="steptitle">에이전트 정의가 실제로 어떻게 바뀌나 (코드 비교)</p>
+  <p class="sub">기존 CrewAI는 <b>역할극 3옵션(role·goal·backstory) + Task</b>로 정의했다:</p>
+<pre><span class="c"># CrewAI — prose 3필드 + Task, 매 호출 재생성</span>
+agent  = Agent(role=<span class="s">"공시 분석가"</span>, goal=<span class="s">"근거로 정확히 답한다"</span>,
+               backstory=<span class="s">"너는 15년차 애널리스트로…"</span>)   <span class="c"># ← 역할극 3옵션</span>
+task   = Task(description=<span class="s">"…"</span>, expected_output=<span class="s">"…"</span>, agent=agent)
+result = Crew(agents=[agent], tasks=[task]).kickoff()    <span class="c"># 매 호출 재생성</span>
+qa     = _as_pydantic(result)                            <span class="c"># 수동 추출</span></pre>
+  <p class="sub">재구축 PydanticAI는 에이전트 1개 = <b>3요소(모델 · 출력스키마 · 지시문)</b>:</p>
+<pre><span class="c"># PydanticAI — 모듈 1회 정의, 호출 1줄, 항상 검증된 객체</span>
+qa_agent = Agent(
+    <span class="s">"openai:gpt-5.1"</span>,        <span class="c"># ① 모델</span>
+    output_type=QAResult,        <span class="c"># ② 출력 스키마(검증+자동 재시도) ← CrewAI엔 1급으로 없던 축</span>
+    instructions=_PERSONA + <span class="s">"너는 공시 분석가다. [근거]만 사용해 답한다 …"</span>)  <span class="c"># ③ 지시문 = 공통 말투 + 고유 지시</span>
+qa = (await qa_agent.run(prompt)).output</pre>
+  <ul>
+    <li><b><code>backstory</code>(역할극 배경)를 버리고</b> 그 자리에 <b><code>output_type</code>(구조화 검증)을 1급</b>으로 올렸다. 역할 설명은 instructions 한 줄로 압축.</li>
+    <li><b>페르소나(<code>_PERSONA</code>)는 ③ 지시문의 '공통 말투' 부분일 뿐</b> — "페르소나만" 설정하는 게 아니라, 각 에이전트가 자기 <b>모델·output_type·고유 지시</b>를 따로 가진다(말투만 공유).</li>
+    <li>정량(§11-3): 정의 <b>448→144줄</b>, 호출당 객체 <b>3→0개</b>(싱글톤 재사용), 호출부 <b>~30줄→1줄</b>.</li>
+  </ul>
+
   <h3>11-3. 정량 비교 (실측)</h3>
   <p>"경량"이 얼마나 가벼워졌는지 코드 기준 실측치:</p>
   <table>
@@ -923,7 +965,7 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
     <tr><th>계층</th><th>무엇</th><th>비용</th><th>결과</th></tr>
     <tr><td><b>① 검색</b> (eval_retrieval)</td><td>정답 청크 회수율 hit@k·MRR — 표파싱·하이브리드·Contextual·<b>사업연도필터</b> 직접 측정</td><td><b>무료·결정적</b></td><td>must <b>13/13 hit@5(100%)</b>, MRR <b>0.933</b></td></tr>
     <tr><td><b>② 행동</b> (eval_chat)</td><td>멀티턴·거시결합·표질의·되묻기·스코프비교·숫자신선도</td><td>LLM</td><td><b>6/6 must + 2 watch</b></td></tr>
-    <tr><td><b>③ 회귀</b> (run_golden_inproc)</td><td>17케이스 회귀 스모크(인텐트·정확수치·스코프·기간)</td><td>LLM</td><td><b>15/15 must + 2 watch</b></td></tr>
+    <tr><td><b>③ 회귀</b> (run_golden_inproc)</td><td>18케이스 회귀 스모크(인텐트·정확수치·스코프·기간·기수)</td><td>LLM</td><td><b>16/16 must + 2 watch</b></td></tr>
   </table>
   <ul>
     <li><b>검색 평가가 핵심</b>: LLM 없이 임베딩+BM25만 돌려 <b>공짜·결정적</b>으로 검색 품질을 격리 측정 → 재구축의 진짜 개선을 숫자로 증명. CI에서 매번 가능.</li>
@@ -1004,12 +1046,12 @@ def evaluate(case, resp):
     return (실패사유_없음, 실패사유목록)
 <span class="c"># 각 케이스를 handle_chat()에 직접 넣고 evaluate → PASS/FAIL/WATCH 집계 (서버 불필요)</span></pre>
 <pre><span class="c"># ③ 실제 실행 출력(발췌)</span>
-=== 챗 골든셋 17케이스 (인프로세스) ===
+=== 챗 골든셋 18케이스 (인프로세스) ===
   [<span class="g">PASS</span> ] ss-num-opincome        | 숫자 트랙 - 영업이익(RAG exact-match)
   [<span class="g">PASS</span> ] ss-summary-business    | 요약 트랙 - 사업 내용(서술)
   [<span class="g">PASS</span> ] ss-scope-other-company | 스코프 가드 - 다른 회사 질문
   ...
---- 결과 ---   must : 15/15 통과   watch : 2/2 통과
+--- 결과 ---   must : 16/16 통과   watch : 2/2 통과
 ✅ must 전부 통과</pre>
   <p class="sub">→ 파일에 케이스를 한 줄 추가하면 바로 검증 대상이 된다. 미통과 시엔 사유(<code>intent=summary (기대 qa)</code> 등)가 함께 찍혀 디버깅이 쉽다.</p>
 
@@ -1018,13 +1060,13 @@ def evaluate(case, resp):
     <tr><th>계층</th><th>케이스</th><th>결과</th></tr>
     <tr><td>① 검색</td><td>15 (must 13 / watch 2)</td><td><b>must 13/13 hit@5(100%) · MRR 0.933</b></td></tr>
     <tr><td>② 행동</td><td>8 (must 6 / watch 2)</td><td><b>must 6/6 · watch 2/2</b></td></tr>
-    <tr><td>③ 회귀(골든)</td><td>17 (must 15 / watch 2)</td><td><b>must 15/15 · watch 2/2</b></td></tr>
+    <tr><td>③ 회귀(골든)</td><td>18 (must 16 / watch 2)</td><td><b>must 16/16 · watch 2/2</b></td></tr>
   </table>
   <p class="sub">사전요약 트랙 도입 후에도 회귀 없음(요약 케이스 전부 통과). 상세는 <code>eval/EVAL_README.md</code>.</p>
 
   <h3>12-4. 전체 케이스 목록 (무엇을 검사했나)</h3>
-  <p>실제로 검사한 40개 케이스 전부. ✅=must 통과, 🔶=watch(알려진 약점·추적용).</p>
-  <p class="steptitle">① 회귀 골든 (chat_golden_set) — 17건 · must 15/15</p>
+  <p>실제로 검사한 41개 케이스 전부. ✅=must 통과, 🔶=watch(알려진 약점·추적용).</p>
+  <p class="steptitle">① 회귀 골든 (chat_golden_set) — 18건 · must 16/16</p>
   <table>
     <tr><th>케이스</th><th>질문</th><th>검사 포인트</th></tr>
     <tr><td>✅ ss-summary-overview</td><td>삼성 회사 개요 요약</td><td>intent=summary · verdict≠fail</td></tr>
@@ -1044,6 +1086,7 @@ def evaluate(case, resp):
     <tr><td>✅ ss-period-shares</td><td>2024년 사업보고서 기준 보통주 발행 주식총수</td><td>사업연도 필터 적용해도 corpus 근거 생존(숫자·verdict≠fail)</td></tr>
     <tr><td>✅ ss-fy-financial</td><td>2023년 삼성 영업이익</td><td>재무가 요청 사업연도(FY2023) 조회 — 6,566,976</td></tr>
     <tr><td>✅ ss-fy-summary</td><td>2023년 삼성 사업 내용 요약</td><td>요약 트랙도 사업연도 필터 존중·회귀 없음</td></tr>
+    <tr><td>✅ ss-gisu-shares</td><td>제57기말 보통주 발행 주식총수</td><td>기수→사업연도 환산(삼성 제57기=2025) — 5,919,637,922</td></tr>
   </table>
   <p class="steptitle">② 행동 (chat_eval_set) — 8건 · must 6/6</p>
   <table>
@@ -1120,7 +1163,7 @@ def evaluate(case, resp):
     <li><b>정확수치=재무결합</b> — "영업이익 얼마?" → DART 정형 API로 <b>43,601,051,000,000원</b> 정확 제시(+접수번호·DART 링크).</li>
     <li><b>거시결합</b> — "요즘 환율·금리 상황에서 실적 어때?" → <code>macroSnapshot</code>(환율·기준금리·국고채·KOSPI).</li>
     <li><b>정확도·provenance</b> — 모든 답에 근거 충실도 % + 출처 카드 + DART 원문 링크.</li>
-    <li><b>평가 수치</b> — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 15/15(17케이스).</li>
+    <li><b>평가 수치</b> — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 16/16(18케이스).</li>
     <li><b>API 절약 로직</b> — 모델 티어링·retrieve-then-read·정형API·캐시(§13)로 "왜 싸고 정확한지".</li>
     <li><b>X-Trace-Id + Logfire 콘솔</b> — 한 요청의 내부 추론(router→검색→writer→verifier) 타임라인 시연.</li>
     <li><b>스코프 가드</b> — 방 회사가 아닌/비교 질문 차단(out_of_scope) → 객관성·범위 통제.</li>
@@ -1220,7 +1263,7 @@ summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db</pre>
   (2026-06-23 기간 질의 버그 사건에서 함께 드러난 이슈들)</p>
 
   <details class="tgroup">
-  <summary>⚠️ 트러블슈팅 이슈 모음 (현재 8건)</summary>
+  <summary>⚠️ 트러블슈팅 이슈 모음 (현재 11건)</summary>
 
   <div class="tnote">
     <p class="sym"><span class="num">1.</span>기간 질문("2024년 사업보고서 …")이 "자료 없음"·빈 답으로 돌아온다</p>
@@ -1267,7 +1310,26 @@ summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db</pre>
   <div class="tnote">
     <p class="sym"><span class="num">8.</span>(메타) 이 버그가 왜 오래 안 잡혔나 — eval 공백</p>
     <p class="cause"><span class="lc">원인</span> 골든·행동·검색 어느 세트에도 "2024년 …" 같은 <b>기간 한정 질문이 없었다</b>. 그래서 <code>date_from/to</code>가 채워지는 코드 경로(= 버그 지점)가 한 번도 실행되지 않아, 35개 케이스가 다 통과하는데도 버그가 살아 있었다.</p>
-    <p class="fix"><span class="lf">해결</span> <code>eval_retrieval</code>에 사업연도 필터(<code>fy_from/fy_to</code>)를 지원하고 결정적 가드 <code>ss-ret-fy-shares/-rnd</code> 추가, 골든·행동에 기간 E2E 케이스(<code>ss-period-shares</code>·<code>ss-fy-financial</code>·<code>ss-fy-summary</code>) 추가. <b>최종: 검색 13/13·MRR 0.933 · 골든 15/15 · 행동 6/6, 회귀 0.</b></p>
+    <p class="fix"><span class="lf">해결</span> <code>eval_retrieval</code>에 사업연도 필터(<code>fy_from/fy_to</code>)를 지원하고 결정적 가드 <code>ss-ret-fy-shares/-rnd</code> 추가, 골든·행동에 기간 E2E 케이스(<code>ss-period-shares</code>·<code>ss-fy-financial</code>·<code>ss-fy-summary</code>) 추가. <b>최종: 검색 13/13·MRR 0.933 · 골든 16/16 · 행동 6/6, 회귀 0.</b></p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">9.</span>기수로 물으면("제57기말 …") 답을 못 찾는다 — 같은 질문을 "2025년"으로 하면 정상</p>
+    <p class="cause"><span class="lc">원인</span> 라우터가 <b>서력 연도("2024년")만</b> 인식하고 <b>기수(제N기)는 사업연도로 변환하지 못한다</b>. 그래서 "제57기말"엔 <code>date_from/to</code>가 비어 <code>bsns_year</code> 필터가 안 걸리고, 전 연도 검색에서 랭킹이 엉뚱한 표("증권의 발행을 통한 자금조달 실적"·월별 주가·거래량)를 잡았다. 게다가 같은 "제57기"도 회사마다 사업연도가 다르다(<b>삼성=2025 · 현대=2024</b>) — 단순 매핑 불가.</p>
+    <p class="cause"><span class="lf">해결</span> 라우터 프롬프트에 <b>기수↔사업연도 환산표</b>를 주입(<code>_gisu_hint</code>)하되, 그 기준점(기수↔연도)은 <b>DART 정형재무 <code>thstrm_nm</code>("제 57 기")에서 도출·캐시</b>한다(<code>fiscal_anchor</code>). 회사 추가 시 코드 변경 없이 자동 — "제57기"→해당 사업연도로 <code>date</code>를 채워 필터가 정상 작동 → 삼성 5,919,637,922주·현대 209,416,191주. 검증: <code>ss-gisu-shares</code>. <i>(참고: 제57기 사업보고서 20260310001404는 2026.03 공시라 corpus엔 미적재지만, 제57기말 유통주식수는 2025 반기/분기에 있어 답 가능.)</i></p>
+    <p class="fix"><span class="lc">⚠️ 자기수정(회고)</span> <b>처음엔 회사별 기수를 코드에 하드코딩</b>(<code>_GISU_ANCHOR = {"00126380": (56,2024), …}</code>)했는데, 이는 <b>잘못된 판단이었다</b> — ①회사 추가 때마다 손으로 박아야 해 확장성이 없고 ②"제N기"를 안 쓰거나 결산월이 다른 회사엔 안 맞으며 ③무엇보다 <b>공시(DART)에 이미 있는 정보를 코드에 베낀 것</b>이었다. 지적을 받아 <b>DART에서 도출하는 방식으로 교체</b>했다. <i>교훈: 외부 권위 데이터가 있으면 코드에 박지 말고 그 출처에서 끌어와라.</i></p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">10.</span>요약 답변의 말투가 흔들린다 — 같은 질문인데 '~입니다'체였다가 '~된다'체로 바뀜</p>
+    <p class="cause"><span class="lc">원인</span> 답 말투는 <code>_PERSONA</code>에서 '~합니다/~입니다'체로 통일하게 돼 있으나, <b>사전요약(summary_&lt;corp&gt;)에 저장된 takeaway 문장 일부가 '~된다'체</b>로 섞여 있다(빌드때 재무·위험 섹션 등이 개조식으로 요약됨, 삼성 기준 약 10%). 요약 트랙은 이 takeaway를 [근거]로 이어붙이는데, LLM이 <b>근거 문장의 어미를 그대로 미러링</b>해 '~된다'체가 새어 나왔다(런마다 들쭉날쭉).</p>
+    <p class="fix"><span class="lf">해결</span> <code>_PERSONA</code>에 <b>"근거가 어떤 문체여도 답변은 예외 없이 '~합니다/~입니다'체로 다시 쓰고, 근거 어미를 복사하지 마라"</b>를 명시. 재빌드 없이 런타임에서 문체를 강제 정규화 → Q1·Q2 반복 실행에서 '~된다' 0건으로 안정. <i>(한계: 말투는 자동 eval 어서션이 없어 회귀를 결정적으로 못 잡는다 — 알려진 eval 공백, 추적 항목.)</i></p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">11.</span>"주요 사업의 내용 요약"인데 엉뚱한 섹션(재무위험·주석)을 답한다 — 원하는 건 DX/DS/SDC/Harman 사업 개요</p>
+    <p class="cause"><span class="lc">원인</span> 원하던 "I. 회사의 개요/II. 사업의 내용 > 사업의 개요" 요약은 <code>summary_&lt;corp&gt;</code>에 <b>분명히 존재</b>한다(DX/DS/SDC/Harman 포함). 그런데 <b>요약 트랙이 벡터 단독</b> 검색이라, "주요 사업의 내용"처럼 섹션 지정형 질의에 점수가 <b>0.41대로 평평</b>해 변별이 안 됐다 — 경영진단·재무제표 주석·위험관리 요약이 사업 개요를 눌러 상위를 차지(정작 사업 개요는 7위). corpus는 하이브리드인데 <b>요약 트랙만 BM25가 빠져</b> 있던 비대칭.</p>
+    <p class="fix"><span class="lf">해결</span> <code>search_summaries</code>를 corpus와 동일하게 <b>하이브리드(벡터 ∪ BM25 → RRF)</b>로 전환(BM25 인덱스 빌더를 컬렉션 공용으로 일반화). BM25가 "주요 사업의 내용"→"사업의 개요"를 글자 일치로 끌어올려, 답변이 안정적으로 <b>DX/DS 부문 개요</b>로 시작(3회 모두 사업키워드 4개). 골든 16/16 회귀 0. <i>(잔여: 라우터가 "사업보고서 주요사업"식 필러를 섞으면 BM25가 희석되고 '주석'이 끼는 경우가 있어 쿼리 정제는 추가 개선 여지 — §15.)</i></p>
   </div>
   </details>
 

@@ -8,12 +8,35 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import re
 
 from app.ingest import dart
 from app.schemas.disclosure import Citation
 
 # 표시할 핵심 계정(account_nm 부분일치)
 _KEY_ACCOUNTS = ["매출액", "영업이익", "당기순이익", "자산총계", "부채총계", "자본총계"]
+
+_anchor_cache: dict[str, tuple[int, int] | None] = {}
+
+
+def fiscal_anchor(corp_code: str) -> tuple[int, int] | None:
+    """(기수, 사업연도) 기준점을 **DART 정형재무에서 도출**해 캐시한다(회사당 1회).
+
+    근거: `fnlttSinglAcnt` 응답의 `thstrm_nm`("제 57 기")와 그 사업연도가 함께 온다.
+    여기서 (기수, 연도)를 얻으면 임의의 제M기 = year + (M - 기수)로 환산 가능.
+    회사별 하드코딩 대신 공시에서 직접 얻으므로 회사 추가 시 코드 변경이 없다.
+    데이터가 없으면 None(→ 기수 환산 미적용, graceful).
+    """
+    if corp_code in _anchor_cache:
+        return _anchor_cache[corp_code]
+    year, rows = _pick_year(corp_code)
+    anchor = None
+    if rows and year:
+        m = re.search(r"\d+", rows[0].get("thstrm_nm") or "")  # "제 57 기" → 57
+        if m:
+            anchor = (int(m.group()), int(year))
+    _anchor_cache[corp_code] = anchor
+    return anchor
 
 
 def _pick_year(corp_code: str, want: int | None = None) -> tuple[str | None, list[dict]]:

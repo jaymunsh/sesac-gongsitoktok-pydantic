@@ -165,6 +165,7 @@ class VectorStore:
                 for c in chunks
             ],
         )
+        self._bm25.pop(summary_collection(corp_code), None)  # BM25 캐시 무효화(재적재 반영)
         return len(chunks)
 
     def has_summary(self, corp_code: str, rcept_no: str) -> bool:
@@ -177,39 +178,71 @@ class VectorStore:
     def search_summaries(
         self, corp_code: str, query: str, top_k: int | None = None, where: dict | None = None
     ) -> list[Citation]:
-        """사전요약 컬렉션에서 의미검색(벡터). 요약은 이미 간결·서술이라 벡터만으로 충분.
+        """사전요약 컬렉션에서 **하이브리드 검색**(벡터 ∪ BM25 → RRF).
 
-        where(사업연도 필터)를 주면 corpus 트랙과 동일하게 기간을 존중한다(트랙 간 일관성).
+        벡터 단독은 섹션 지정형 질의("주요 사업의 내용")에서 점수가 평평해 엉뚱한
+        섹션(경영진단·주석)을 올린다 — corpus와 동일하게 BM25를 섞어 섹션명·키워드
+        일치를 살린다(보고서 §6-3·트러블슈팅). where(사업연도)는 양쪽에 동일 적용.
         """
         s = get_settings()
         k = top_k or s.summary_top_k
+        ck = s.candidate_k
+        name = summary_collection(corp_code)
         try:
-            coll = self.client.get_collection(summary_collection(corp_code))
+            coll = self.client.get_collection(name)
         except Exception:
             return []
-        q_emb = self.embedder.embed_query(query)
-        res = coll.query(query_embeddings=[q_emb], n_results=k, where=where or None)
-        ids = res.get("ids", [[]])[0]
-        docs = res.get("documents", [[]])[0]
-        metas = res.get("metadatas", [[]])[0]
-        dists = res.get("distances", [[]])[0]
-        out: list[Citation] = []
-        for cid, doc, m, dist in zip(ids, docs, metas, dists):
-            m = m or {}
-            out.append(
-                Citation(
-                    chunk_id=cid, section_title=m.get("section_title") or None,
-                    quote=m.get("raw_text") or doc,
-                    score=round(1 - float(dist), 4) if dist is not None else None,
-                    kind="summary", rcept_no=m.get("rcept_no"),
-                    report_nm=m.get("report_nm"), rcept_dt=_dt_str(m.get("rcept_dt")),
-                )
-            )
-        return out
 
-    # ── 전체 코퍼스 BM25 인덱스(지연 로드·캐시) ──────────────
-    def _corpus_index(self, corp_code: str) -> dict | None:
-        name = corpus_collection(corp_code)
+        # 1) 벡터 후보
+        q_emb = self.embedder.embed_query(query)
+        vres = coll.query(query_embeddings=[q_emb], n_results=ck, where=where or None)
+        vec_ids = vres.get("ids", [[]])[0]
+
+        # 2) BM25 후보 — 요약 컬렉션 전체(섹션명·키워드 글자 일치)
+        idx = self._bm25_index(name)
+        bm25_ids: list[str] = []
+        if idx:
+            scores = idx["bm25"].get_scores(_tokenize(query))
+            for i in sorted(range(len(scores)), key=lambda i: scores[i], reverse=True):
+                if scores[i] <= 0:
+                    break
+                if where and not _match_where(idx["metas"][i], where):
+                    continue
+                bm25_ids.append(idx["ids"][i])
+                if len(bm25_ids) >= ck:
+                    break
+
+        # 3) RRF 융합 → 정규화 → 중복제거
+        w = s.bm25_weight
+        fused: dict[str, float] = {}
+        for rank, cid in enumerate(vec_ids):
+            fused[cid] = fused.get(cid, 0.0) + (1 - w) / (_RRF_K + rank)
+        for rank, cid in enumerate(bm25_ids):
+            fused[cid] = fused.get(cid, 0.0) + w / (_RRF_K + rank)
+        if not fused:
+            return []
+        ranked = sorted(fused.items(), key=lambda kv: kv[1], reverse=True)[:ck]
+        top = ranked[0][1] if ranked else 1.0
+        cits = [
+            self._to_summary_citation(name, cid, round(score / top, 4) if top else 0.0)
+            for cid, score in ranked
+        ]
+        return rerank([c for c in cits if c is not None], top_k=k)
+
+    def _to_summary_citation(self, name: str, cid: str, score: float) -> Citation | None:
+        idx = self._bm25_index(name)
+        if not idx or cid not in idx["pos"]:
+            return None
+        m = idx["metas"][idx["pos"][cid]] or {}
+        return Citation(
+            chunk_id=cid, section_title=m.get("section_title") or None,
+            quote=m.get("raw_text") or idx["docs"][idx["pos"][cid]],
+            score=score, kind="summary", rcept_no=m.get("rcept_no"),
+            report_nm=m.get("report_nm"), rcept_dt=_dt_str(m.get("rcept_dt")),
+        )
+
+    # ── 컬렉션 전체 BM25 인덱스(지연 로드·캐시) — corpus·summary 공용 ──────
+    def _bm25_index(self, name: str) -> dict | None:
         if name in self._bm25:
             return self._bm25[name]
         try:
@@ -231,6 +264,9 @@ class VectorStore:
         }
         self._bm25[name] = idx
         return idx
+
+    def _corpus_index(self, corp_code: str) -> dict | None:
+        return self._bm25_index(corpus_collection(corp_code))
 
     # ── 검색 (진짜 하이브리드: 벡터 ∪ 전체BM25 → RRF → 리랭킹) ──
     def search(
