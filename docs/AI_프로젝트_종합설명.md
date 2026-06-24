@@ -677,6 +677,68 @@ summary 질문은 항상 `summary_<corp>`를 **먼저** 뒤지고, 결과가 안
 2. **검색** — 벡터+키워드폴백 → **진짜 하이브리드(벡터∪전체BM25 RRF) + dedup/최신우선**
 3. **프레임워크** — 무거운 CrewAI 단일 래퍼 → **경량 PydanticAI**
 
+**"pydantic 구조"란?** — 시스템의 **데이터 흐름이 검증된 Pydantic 모델 위에 서 있다**는 뜻이다. 단계 간 핸드오프(라우터→검색→작성→검증)가 전부 타입이 고정된 객체(`RouterResult`·`QAResult`·`Citation`…)로 오가고, 각 LLM 호출의 출력도 스키마로 검증된다. 즉 "딕셔너리·문자열을 추측해 파싱"하는 대신 **typed 데이터 계약**으로 흐른다. 기존(CrewAI)도 이 데이터 계약은 이미 Pydantic이었다 → 그래서 "기존도 pydantic 구조".
+
+```
+# 한 턴이 흐르는 '타입 객체' 파이프라인 — 단계마다 검증된 Pydantic 모델
+ChatV2Request                # 입력(와이어 계약, camelCase)
+   │ contract.to_internal
+   ▼
+RouterResult                 # ← router_agent  (output_type 검증)
+   │ if/else · asyncio.gather # 흐름은 평범한 파이썬(제어 축)
+   ▼
+list[Citation]               # ← 검색·재무·거시 (코드가 채운 근거, provenance)
+   │ format_citations
+   ▼
+QAResult / SummaryResult     # ← writer  (output_type 검증·자동 재시도)
+   │
+   ▼
+VerificationResult           # ← verifier (output_type)
+   │ contract.to_v2
+   ▼
+ChatV2Response               # 출력(sources·verification 등)
+```
+→ 모든 화살표가 **핸드오프**, 모든 박스가 **검증된 Pydantic 객체**. 데이터는 PydanticAI가(타입·검증), 흐름은 평범한 파이썬이 맡는다(축이 다름 — 아래).
+
+
+> **용어 주의 — Pydantic ≠ PydanticAI** (자주 헷갈림): "기존 프로젝트도 아키텍처가 pydantic이었다"는 말은 *Pydantic 모델을 썼다*는 뜻이지 *PydanticAI를 썼다*는 뜻이 아니다.
+> - **Pydantic** = 파이썬 **데이터 검증 라이브러리**. 결과를 `RouterResult`·`QAResult` 같은 *검증되는 클래스*로 받는다. 기존 CrewAI도 `output_pydantic`으로 결과를 Pydantic 모델로 받았다 → 그래서 "기존도 pydantic 구조".
+> - **PydanticAI** = Pydantic 팀이 만든 **에이전트 프레임워크**(별개 제품). `Agent(output_type=Model)` 한 줄로 LLM 출력을 **검증 + 안 맞으면 자동 재시도**(§7-2).
+>
+> → 둘 다 "결과를 Pydantic 모델로 받는다"는 점은 같지만, **기존은 무거운 CrewAI 위에서 수동 추출**(`_as_pydantic`), **재구축은 PydanticAI의 1급 기능**(검증·재시도 자동). 즉 *모델(Pydantic)은 그대로 두고, 프레임워크(CrewAI→PydanticAI)를 바꾼 것*. 그래서 "기능"이 아니라 **무게·관용구·유지보수성**이 바뀐다(§11-3).
+
+**✅ 왜 PydanticAI인가 — 이 프레임워크를 쓰는 이유(핵심 장점)**
+1. **구조화 출력이 1급** — `output_type` 한 줄로 LLM 출력을 검증 + 자동 재시도(§7-2). 우리가 매 단계 진짜 원하는 건 "LLM 출력을 정해진 스키마로 **안전하게 받기**"인데, 그게 정확히 이 프레임워크의 1급 기능이다.
+2. **기존 스키마 그대로 재사용** — `RouterResult`·`QAResult`를 그대로 `output_type`으로 → CrewAI에서 옮기는 **교체 비용이 가장 작았다**.
+3. **경량·Pydantic-native** — 호출당 객체 0(모듈 싱글톤 재사용), 코어 ~36KB → import·기동이 가볍다(§11-3).
+4. **모델 추상화** — `"openai:gpt-5.1"`를 `.env` 한 줄로 provider/모델 교체(역할별 티어링도 자유).
+5. **deps(의존성 주입)** — 벡터스토어·설정을 **타입 안전**하게 주입(`RunContext`) — 전역/수동 전달 없이.
+6. **관찰성 1급** — Logfire(같은 팀) 자동 계측, `instrument_pydantic_ai()` 한 줄로 전 에이전트가 trace에 묶인다(§9-3).
+
+> 한마디 — **흐름은 평범한 파이썬으로 충분하고, 매 호출에서 진짜 필요한 건 "검증된 타입 객체"**다. 그 1급 기능을 가장 **가볍게** 주는 게 PydanticAI라서 골랐다. (Spring 비유로 푼 장단점 표는 §5-4)
+
+**구조적으로 LangChain·LangGraph는 어디에?** — LLM 앱 프레임워크는 사실 **두 축**을 다룬다:
+- **데이터 축(구조화 데이터)** — 단계 간 오가는 객체를 *타입·검증*한다 → 우리는 **Pydantic/PydanticAI**가 담당(`output_type`).
+- **제어 축(오케스트레이션)** — 라우터→검색→작성→검증의 *흐름*을 누가 표현하나 → 우리는 **평범한 파이썬**(`if/else`·`asyncio.gather`)으로 직접.
+
+LangChain·LangGraph는 주로 **제어 축**을 프레임워크가 가져간다:
+- **LangChain** = 체인(Runnable) 조립 — 부품(LLM·검색·메모리)을 파이프로 잇는 구조.
+- **LangGraph** = 상태 그래프(노드·엣지) — 흐름을 명시적 *상태기계*로(순환·분기·롤백·휴먼인더루프에 강함).
+
+우리 흐름은 분기·병렬이 평범한 파이썬으로 충분해 **제어 축은 코드로 두고, 데이터 축만 PydanticAI로** 받쳤다(§5-3). 즉 **"pydantic 구조"는 *데이터(타입 객체)* 이야기**고, **LangGraph는 *제어(흐름)* 이야기 — 축이 다르다.** (그래서 "기존도 pydantic이었다"와 "LangGraph로 안 갔다"는 서로 모순이 아니다.) 프레임워크 역사·선택 근거는 §5.
+
+**PydanticAI · LangChain · LangGraph 간단 비교**
+
+| | PydanticAI | LangChain | LangGraph |
+|---|---|---|---|
+| 한 줄 | 타입세이프 에이전트(구조화 출력) | 부품 상자(체인 조립) | 상태 그래프(노드·엣지) |
+| 다루는 축 | **데이터**(타입·검증) | 부품 통합·조립 | **제어**(흐름) |
+| 주 강점 | `output_type` 검증·자동 재시도·경량 | RAG·도구·메모리 부품이 풍부 | 순환·분기·롤백·휴먼인더루프 등 복잡 흐름 |
+| 잘 맞는 곳 | 흐름은 단순 + 구조화 출력이 중요 | 빠른 프로토타입·다양한 통합 | 복잡한 상태기계가 필요할 때 |
+| 우리 선택 | ✅ 데이터 축 담당 | — (부품은 직접 구현) | — (흐름은 평범한 파이썬) |
+
+→ 셋은 경쟁이라기보다 **다루는 층이 다르다**: PydanticAI=데이터, LangGraph=제어, LangChain=부품. 우리는 흐름이 단순해 데이터 축만 프레임워크로 받쳤다. (4종 전체 역사·표는 §5-0·§5-2)
+
 ### 11-2. 프레임워크 비교 (왜 교체가 합리적인가)
 | | CrewAI(기존) | PydanticAI(재구축) |
 |---|---|---|

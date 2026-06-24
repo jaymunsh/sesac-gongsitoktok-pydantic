@@ -72,6 +72,11 @@
   .tnote{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:2px 16px;margin:10px 0;background:var(--card)}
   .tnote .sym{font-weight:800;color:#0f1420;font-size:15.5px;margin:0;padding:11px 0;border-bottom:2px solid #aeb8c7}
   .tnote .sym .num{color:var(--accent);margin-right:7px}
+  .tnote .sym .ts{float:right;font-size:11.5px;color:var(--mut);font-weight:500;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 7px;margin-left:10px}
+  /* 개념 설명 카드(pydantic 구조 등) */
+  .pcard{border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:10px;padding:13px 16px;margin:14px 0;background:var(--card)}
+  .pcard h4{margin:0 0 8px;font-size:15px;color:#0f1420}
+  .pcard pre{margin:10px 0 2px}
   .tnote p{margin:0;font-size:14px;line-height:1.6;padding:9px 0}
   .tnote .cause{border-bottom:1px solid var(--line)}
   .tnote .lc,.tnote .lf{font-weight:700;margin-right:6px}
@@ -896,6 +901,71 @@ qa = (await qa_agent.run(f"[질문]…[근거]\n{evidence}")).output   <span cla
     <li><b>검색</b> — 벡터+키워드폴백 → <b>진짜 하이브리드(벡터∪전체BM25 RRF) + dedup/최신우선</b></li>
     <li><b>프레임워크</b> — 무거운 CrewAI 단일 래퍼 → <b>경량 PydanticAI</b></li>
   </ol>
+  <div class="pcard">
+    <h4>📦 "pydantic 구조"란?</h4>
+    <p class="sub" style="margin:0">시스템의 <b>데이터 흐름이 검증된 Pydantic 모델 위에 서 있다</b>는 뜻이다. 단계 간 핸드오프가 전부 <b>타입이 고정된 객체</b>로 오가고, 각 LLM 출력도 스키마로 검증된다 — "딕셔너리·문자열을 추측해 파싱"하는 대신 <b>typed 데이터 계약</b>으로 흐른다. 기존(CrewAI)도 이 데이터 계약은 이미 Pydantic이었다 → 그래서 "기존도 pydantic 구조".</p>
+<pre><span class="c"># 한 턴이 흐르는 '타입 객체' 파이프라인 — 단계마다 검증된 Pydantic 모델</span>
+ChatV2Request                <span class="c"># 입력(와이어 계약, camelCase)</span>
+   │ contract.to_internal
+   ▼
+RouterResult                 <span class="c"># ← router_agent  (output_type 검증)</span>
+   │ if/else · asyncio.gather <span class="c"># 흐름은 평범한 파이썬(제어 축)</span>
+   ▼
+list[Citation]               <span class="c"># ← 검색·재무·거시 (코드가 채운 근거, provenance)</span>
+   │ format_citations
+   ▼
+QAResult / SummaryResult     <span class="c"># ← writer  (output_type 검증·자동 재시도)</span>
+   │
+   ▼
+VerificationResult           <span class="c"># ← verifier (output_type)</span>
+   │ contract.to_v2
+   ▼
+ChatV2Response               <span class="c"># 출력(sources·verification 등)</span></pre>
+    <p class="sub" style="margin:8px 0 0">→ 모든 화살표가 <b>핸드오프</b>, 모든 박스가 <b>검증된 Pydantic 객체</b>. 데이터는 PydanticAI가(타입·검증), 흐름은 평범한 파이썬이 맡는다(축이 다름 — 아래).</p>
+  </div>
+  <div class="callout key"><b>용어 주의 — Pydantic ≠ PydanticAI</b> (자주 헷갈림): "기존 프로젝트도 아키텍처가 pydantic이었다"는 말은 <i>Pydantic 모델을 썼다</i>는 뜻이지 <i>PydanticAI를 썼다</i>는 뜻이 아니다.
+    <ul style="margin:8px 0 0;padding-left:18px">
+      <li><b>Pydantic</b> = 파이썬 <b>데이터 검증 라이브러리</b>. 결과를 <code>RouterResult</code>·<code>QAResult</code> 같은 <i>검증되는 클래스</i>로 받는다. 기존 CrewAI도 <code>output_pydantic</code>으로 결과를 Pydantic 모델로 받았다 → 그래서 "기존도 pydantic 구조".</li>
+      <li><b>PydanticAI</b> = Pydantic 팀이 만든 <b>에이전트 프레임워크</b>(별개 제품). <code>Agent(output_type=Model)</code> 한 줄로 LLM 출력을 <b>검증 + 안 맞으면 자동 재시도</b>(§7-2).</li>
+    </ul>
+    → 둘 다 "결과를 Pydantic 모델로 받는다"는 점은 같지만, <b>기존은 무거운 CrewAI 위에서 수동 추출</b>(<code>_as_pydantic</code>), <b>재구축은 PydanticAI의 1급 기능</b>(검증·재시도 자동). 즉 <i>모델(Pydantic)은 그대로 두고, 프레임워크(CrewAI→PydanticAI)를 바꾼 것</i> — "기능"이 아니라 <b>무게·관용구·유지보수성</b>이 바뀐다(§11-3).</div>
+
+  <div class="pcard">
+    <h4>✅ 왜 PydanticAI인가 — 이 프레임워크를 쓰는 이유</h4>
+    <ul style="margin:6px 0 0;padding-left:18px">
+      <li><b>구조화 출력이 1급</b> — <code>output_type</code> 한 줄로 LLM 출력을 검증 + 자동 재시도(§7-2). 우리가 매 단계 진짜 원하는 건 "LLM 출력을 정해진 스키마로 <b>안전하게 받기</b>"인데, 그게 정확히 이 프레임워크의 1급 기능이다.</li>
+      <li><b>기존 스키마 그대로 재사용</b> — <code>RouterResult</code>·<code>QAResult</code>를 그대로 <code>output_type</code>으로 → CrewAI에서 옮기는 교체 비용이 가장 작았다.</li>
+      <li><b>경량·Pydantic-native</b> — 호출당 객체 0(모듈 싱글톤 재사용), 코어 ~36KB → import·기동이 가볍다(§11-3).</li>
+      <li><b>모델 추상화</b> — <code>"openai:gpt-5.1"</code>를 <code>.env</code> 한 줄로 provider/모델 교체(역할별 티어링도 자유).</li>
+      <li><b>deps(의존성 주입)</b> — 벡터스토어·설정을 <b>타입 안전</b>하게 주입(<code>RunContext</code>) — 전역/수동 전달 없이.</li>
+      <li><b>관찰성 1급</b> — Logfire(같은 팀) 자동 계측, <code>instrument_pydantic_ai()</code> 한 줄로 전 에이전트가 trace에 묶인다(§9-3).</li>
+    </ul>
+    <p class="sub" style="margin:8px 0 0">한마디 — <b>흐름은 평범한 파이썬으로 충분하고, 매 호출에서 진짜 필요한 건 "검증된 타입 객체"</b>다. 그 1급 기능을 가장 <b>가볍게</b> 주는 게 PydanticAI라서 골랐다. (Spring 비유로 푼 장단점 표는 §5-4)</p>
+  </div>
+
+  <p class="steptitle">구조적으로 LangChain·LangGraph는 어디에?</p>
+  <p>LLM 앱 프레임워크는 사실 <b>두 축</b>을 다룬다:</p>
+  <ul>
+    <li><b>데이터 축(구조화 데이터)</b> — 단계 간 오가는 객체를 <i>타입·검증</i>한다 → 우리는 <b>Pydantic/PydanticAI</b>가 담당(<code>output_type</code>).</li>
+    <li><b>제어 축(오케스트레이션)</b> — 라우터→검색→작성→검증의 <i>흐름</i>을 누가 표현하나 → 우리는 <b>평범한 파이썬</b>(<code>if/else</code>·<code>asyncio.gather</code>)으로 직접.</li>
+  </ul>
+  <p>LangChain·LangGraph는 주로 <b>제어 축</b>을 프레임워크가 가져간다:</p>
+  <ul>
+    <li><b>LangChain</b> = 체인(Runnable) 조립 — 부품(LLM·검색·메모리)을 파이프로 잇는 구조.</li>
+    <li><b>LangGraph</b> = 상태 그래프(노드·엣지) — 흐름을 명시적 <i>상태기계</i>로(순환·분기·롤백·휴먼인더루프에 강함).</li>
+  </ul>
+  <div class="callout key">우리 흐름은 분기·병렬이 평범한 파이썬으로 충분해 <b>제어 축은 코드로 두고, 데이터 축만 PydanticAI로</b> 받쳤다(§5-3). 즉 <b>"pydantic 구조"는 <i>데이터(타입 객체)</i> 이야기</b>고, <b>LangGraph는 <i>제어(흐름)</i> 이야기 — 축이 다르다.</b> 그래서 "기존도 pydantic이었다"와 "LangGraph로 안 갔다"는 서로 모순이 아니다. (프레임워크 역사·선택 근거는 §5)</div>
+
+  <p class="steptitle">PydanticAI · LangChain · LangGraph 간단 비교</p>
+  <table>
+    <tr><th></th><th>PydanticAI</th><th>LangChain</th><th>LangGraph</th></tr>
+    <tr><td>한 줄</td><td>타입세이프 에이전트(구조화 출력)</td><td>부품 상자(체인 조립)</td><td>상태 그래프(노드·엣지)</td></tr>
+    <tr><td>다루는 축</td><td><b>데이터</b>(타입·검증)</td><td>부품 통합·조립</td><td><b>제어</b>(흐름)</td></tr>
+    <tr><td>주 강점</td><td><code>output_type</code> 검증·자동 재시도·경량</td><td>RAG·도구·메모리 부품이 풍부</td><td>순환·분기·롤백·휴먼인더루프 등 복잡 흐름</td></tr>
+    <tr><td>잘 맞는 곳</td><td>흐름은 단순 + 구조화 출력이 중요</td><td>빠른 프로토타입·다양한 통합</td><td>복잡한 상태기계가 필요할 때</td></tr>
+    <tr><td>우리 선택</td><td>✅ 데이터 축 담당</td><td>— (부품은 직접 구현)</td><td>— (흐름은 평범한 파이썬)</td></tr>
+  </table>
+  <p class="sub">→ 셋은 경쟁이라기보다 <b>다루는 층이 다르다</b>: PydanticAI=데이터, LangGraph=제어, LangChain=부품. 우리는 흐름이 단순해 데이터 축만 프레임워크로 받쳤다. (4종 전체 역사·표는 §5-0·§5-2)</p>
   <h3>11-2. 프레임워크 비교</h3>
   <table>
     <tr><th></th><th>CrewAI(기존)</th><th>PydanticAI(재구축)</th></tr>
@@ -1266,68 +1336,68 @@ summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db</pre>
   <summary>⚠️ 트러블슈팅 이슈 모음 (현재 11건)</summary>
 
   <div class="tnote">
-    <p class="sym"><span class="num">1.</span>기간 질문("2024년 사업보고서 …")이 "자료 없음"·빈 답으로 돌아온다</p>
+    <p class="sym"><span class="num">1.</span><span class="ts">2026-06-23 18:14</span>기간 질문("2024년 사업보고서 …")이 "자료 없음"·빈 답으로 돌아온다</p>
     <p class="cause"><span class="lc">원인</span> 라우터가 "2024년"을 <code>date_from/to</code>(예 20240101~20241231)로 변환하면 <code>chat.py</code>가 그 값을 <b>문자열</b>로 저장된 <code>rcept_dt</code>에 Chroma 범위 연산자 <code>$gte/$lte</code>로 걸었다. Chroma는 이 연산자에 int/float만 허용하므로 벡터 쿼리가 <code>ValueError</code>를 던졌고, 그 예외가 <code>asyncio.gather(return_exceptions=True)</code>에 잡혀 <b>로그 한 줄 없이</b> <code>corpus=[]</code>로 처리됐다. 결국 writer는 빈 근거(또는 재무 6계정만)를 받아 "자료 없음"이라 답했다 — <b>기간 표현이 들어간 모든 질문</b>이 영향.</p>
     <p class="fix"><span class="lf">해결</span> 필터 기준 자체를 <b>사업연도 <code>bsns_year</code>(int)</b>로 바꿔 <code>_date_where</code>가 int 범위를 생성하게 했다(<code>chat.py</code>·<code>vectorstore.py</code>). 기존 청크 메타는 백필 마이그레이션으로 채웠고(재임베딩 없음), <b>떠 있던 서버는 BM25 인메모리 캐시 때문에 1회 재시작</b>이 필요하다. 검증: E2E <code>ss-period-shares</code> + 무료·결정적 검색 가드 <code>ss-ret-fy-*</code>.</p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">2.</span>"2024년 사업보고서"라고 물었는데 한 해 전(FY2023) 내용이 나온다</p>
+    <p class="sym"><span class="num">2.</span><span class="ts">2026-06-23 18:14</span>"2024년 사업보고서"라고 물었는데 한 해 전(FY2023) 내용이 나온다</p>
     <p class="cause"><span class="lc">원인</span> 기간을 <b>접수일(<code>rcept_dt</code>)</b> 기준으로 걸렀다. 그런데 사업보고서는 해당 사업연도 <b>다음 해 3월경</b>에 제출된다(FY2024 보고서 → 2025.03 접수). 즉 "접수연도 2024"로 거르면 실제로는 <b>FY2023(제55기)</b> 보고서가 잡혀 사용자 통념과 한 해가 어긋났다.</p>
     <p class="fix"><span class="lf">해결</span> <code>report_nm</code>에 박힌 사업연도("사업보고서 (2024.12)" → 2024)를 정규식으로 파싱해 <code>bsns_year</code>로 저장·필터한다(<code>_bsns_year</code>). 이로써 "2024년"=FY2024(제56기)로 정합. 4개 컬렉션 <b>68,211개 청크 전부 파싱 성공</b>(미상 0).</p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">3.</span>연도를 지정했는데 재무 수치가 최신연도로 나오거나, 한 답에서 연도가 엇갈린다</p>
+    <p class="sym"><span class="num">3.</span><span class="ts">2026-06-23 18:14</span>연도를 지정했는데 재무 수치가 최신연도로 나오거나, 한 답에서 연도가 엇갈린다</p>
     <p class="cause"><span class="lc">원인</span> 기간 필터가 <b>corpus 검색에만</b> 적용됐다. 재무 트랙(<code>fetch_financial_citations</code>)은 <code>corp_code</code>만 받아 <code>_pick_year</code>가 늘 '오늘 기준 최신연도'를 조회했고, 요약 트랙(<code>search_summaries</code>)은 <code>where</code> 인자 자체가 없었다. 그래서 한 답변 안에서 corpus는 2023년인데 재무는 2025년처럼 <b>연도가 엇갈릴</b> 수 있었다.</p>
     <p class="fix"><span class="lf">해결</span> 재무에 <b>요청 사업연도</b>를 인자로 넘겨 그 해를 조회하고(데이터 없으면 최신으로 graceful 폴백), 요약 <code>search_summaries</code>에 <code>where</code>를 추가해 corpus와 동일 필터를 적용 → <b>세 트랙이 같은 사업연도</b>를 공유. 검증: <code>ss-fy-financial</code>(제55기 영업이익 6,566,976 확인)·<code>ss-fy-summary</code>.</p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">4.</span>근거가 갑자기 비어 답이 부실한데, 에러 로그도 안 보인다</p>
+    <p class="sym"><span class="num">4.</span><span class="ts">2026-06-23 18:14</span>근거가 갑자기 비어 답이 부실한데, 에러 로그도 안 보인다</p>
     <p class="cause"><span class="lc">원인</span> <code>_retrieve</code>가 corpus·재무·거시를 <code>asyncio.gather(return_exceptions=True)</code>로 병렬 실행하는데, 예외가 나면 결과 자리에 <code>Exception</code> 객체가 들어오고 코드는 그걸 <b>조용히 <code>[]</code>로 치환</b>했다(로그 0). 1번의 <code>ValueError</code>가 바로 이 경로로 숨어, 겉으로는 "그냥 근거가 없네"처럼 보였다.</p>
     <p class="fix"><span class="lf">해결</span> 결과 언랩을 <code>_ok(result, label)</code> 헬퍼로 통일 — graceful 동작(빈 리스트 반환)은 유지하되 예외는 <b>반드시 <code>log.warning("retrieve[%s] 실패…")</code></b>로 남긴다. 이제 동일 장애가 나면 로그에서 즉시 원인(외부 API/키 등)이 보인다.</p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">5.</span>적재했는데 일부 공시가 빠졌다</p>
+    <p class="sym"><span class="num">5.</span><span class="ts">2026-06-23 18:14</span>적재했는데 일부 공시가 빠졌다</p>
     <p class="cause"><span class="lc">원인</span> 인제스트 루프가 공시 1건 실패 시 <code>except</code>에서 "[i/N] 실패 …" 한 줄을 print하고 넘어갔다. 수십 건을 연속 적재하면 이 한 줄이 진행 로그에 묻혀, 일부 보고서가 빠진 채 "완료"처럼 보일 수 있었다.</p>
     <p class="fix"><span class="lf">해결</span> 실패 <code>rcept</code>를 모아 적재 종료 시 <code>⚠️ N건 적재 실패 — …</code>로 한 번 더 요약 경고한다(<code>pipeline.py</code>). 누락이 눈에 띄면 해당 <code>rcept_no</code>만 재적재(이미 적재된 건 <code>has_disclosure</code> 스킵 가드로 중복 안 됨).</p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">6.</span>날짜 범위 비교가 Chroma에서 거부된다 (<code>Expected ... int or float</code>)</p>
+    <p class="sym"><span class="num">6.</span><span class="ts">2026-06-23 18:14</span>날짜 범위 비교가 Chroma에서 거부된다 (<code>Expected ... int or float</code>)</p>
     <p class="cause"><span class="lc">원인</span> <code>rcept_dt</code>를 사람이 읽기 좋은 <b>문자열</b>("20240312")로 저장해 둔 상태에서 범위 비교가 필요해지자 숫자 전용 연산자 <code>$gte/$lte</code>를 적용 → <code>Expected operand value to be an int or a float … got 20240101</code>. 저장 타입과 쿼리 연산자가 어긋난 전형적 케이스(= 1번의 직접 트리거).</p>
     <p class="fix"><span class="lf">해결</span> 비교가 필요한 메타(<code>rcept_dt</code>·<code>bsns_year</code>)는 <b>int로 저장</b>하고, <code>Citation</code>으로 돌려줄 때만 str로 복원(다운스트림 계약 유지). BM25 경로의 <code>_match_where</code>도 int 우선 비교로 통일. 기존 데이터는 일회성 스크립트(<code>scripts/migrate_*.py</code>)로 변환(재임베딩 없음).</p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">7.</span>검색이 엉뚱한 표를 상위로 잡는다</p>
+    <p class="sym"><span class="num">7.</span><span class="ts">2026-06-23 18:14</span>검색이 엉뚱한 표를 상위로 잡는다</p>
     <p class="cause"><span class="lc">원인</span> 하이브리드 검색이 쿼리 표현에 민감하다. "보통주 발행 주식총수"의 "<b>발행</b>"이 "증권의 발행을 통한 자금조달 실적"(회사채 발행) 표를 상위로 끌어올려, 정작 "주식의 총수 등" 청크가 top-5 밖으로 밀리기도 한다.</p>
     <p class="fix"><span class="lf">해결</span> 단기로는 라우터가 쿼리를 섹션 어휘로 정제(예 "주식의 총수 유통주식수"), 사업연도 필터로 후보 풀이 좁아져 완화됨. 근본 해결은 복합 질의를 여러 검색으로 쪼개는 <b>쿼리 분해</b>(§15 개선안)로 남겨둠.</p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">8.</span>(메타) 이 버그가 왜 오래 안 잡혔나 — eval 공백</p>
+    <p class="sym"><span class="num">8.</span><span class="ts">2026-06-23 18:14</span>(메타) 이 버그가 왜 오래 안 잡혔나 — eval 공백</p>
     <p class="cause"><span class="lc">원인</span> 골든·행동·검색 어느 세트에도 "2024년 …" 같은 <b>기간 한정 질문이 없었다</b>. 그래서 <code>date_from/to</code>가 채워지는 코드 경로(= 버그 지점)가 한 번도 실행되지 않아, 35개 케이스가 다 통과하는데도 버그가 살아 있었다.</p>
     <p class="fix"><span class="lf">해결</span> <code>eval_retrieval</code>에 사업연도 필터(<code>fy_from/fy_to</code>)를 지원하고 결정적 가드 <code>ss-ret-fy-shares/-rnd</code> 추가, 골든·행동에 기간 E2E 케이스(<code>ss-period-shares</code>·<code>ss-fy-financial</code>·<code>ss-fy-summary</code>) 추가. <b>최종: 검색 13/13·MRR 0.933 · 골든 16/16 · 행동 6/6, 회귀 0.</b></p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">9.</span>기수로 물으면("제57기말 …") 답을 못 찾는다 — 같은 질문을 "2025년"으로 하면 정상</p>
+    <p class="sym"><span class="num">9.</span><span class="ts">2026-06-24 11:52</span>기수로 물으면("제57기말 …") 답을 못 찾는다 — 같은 질문을 "2025년"으로 하면 정상</p>
     <p class="cause"><span class="lc">원인</span> 라우터가 <b>서력 연도("2024년")만</b> 인식하고 <b>기수(제N기)는 사업연도로 변환하지 못한다</b>. 그래서 "제57기말"엔 <code>date_from/to</code>가 비어 <code>bsns_year</code> 필터가 안 걸리고, 전 연도 검색에서 랭킹이 엉뚱한 표("증권의 발행을 통한 자금조달 실적"·월별 주가·거래량)를 잡았다. 게다가 같은 "제57기"도 회사마다 사업연도가 다르다(<b>삼성=2025 · 현대=2024</b>) — 단순 매핑 불가.</p>
     <p class="cause"><span class="lf">해결</span> 라우터 프롬프트에 <b>기수↔사업연도 환산표</b>를 주입(<code>_gisu_hint</code>)하되, 그 기준점(기수↔연도)은 <b>DART 정형재무 <code>thstrm_nm</code>("제 57 기")에서 도출·캐시</b>한다(<code>fiscal_anchor</code>). 회사 추가 시 코드 변경 없이 자동 — "제57기"→해당 사업연도로 <code>date</code>를 채워 필터가 정상 작동 → 삼성 5,919,637,922주·현대 209,416,191주. 검증: <code>ss-gisu-shares</code>. <i>(참고: 제57기 사업보고서 20260310001404는 2026.03 공시라 corpus엔 미적재지만, 제57기말 유통주식수는 2025 반기/분기에 있어 답 가능.)</i></p>
     <p class="fix"><span class="lc">⚠️ 자기수정(회고)</span> <b>처음엔 회사별 기수를 코드에 하드코딩</b>(<code>_GISU_ANCHOR = {"00126380": (56,2024), …}</code>)했는데, 이는 <b>잘못된 판단이었다</b> — ①회사 추가 때마다 손으로 박아야 해 확장성이 없고 ②"제N기"를 안 쓰거나 결산월이 다른 회사엔 안 맞으며 ③무엇보다 <b>공시(DART)에 이미 있는 정보를 코드에 베낀 것</b>이었다. 지적을 받아 <b>DART에서 도출하는 방식으로 교체</b>했다. <i>교훈: 외부 권위 데이터가 있으면 코드에 박지 말고 그 출처에서 끌어와라.</i></p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">10.</span>요약 답변의 말투가 흔들린다 — 같은 질문인데 '~입니다'체였다가 '~된다'체로 바뀜</p>
+    <p class="sym"><span class="num">10.</span><span class="ts">2026-06-24 11:52</span>요약 답변의 말투가 흔들린다 — 같은 질문인데 '~입니다'체였다가 '~된다'체로 바뀜</p>
     <p class="cause"><span class="lc">원인</span> 답 말투는 <code>_PERSONA</code>에서 '~합니다/~입니다'체로 통일하게 돼 있으나, <b>사전요약(summary_&lt;corp&gt;)에 저장된 takeaway 문장 일부가 '~된다'체</b>로 섞여 있다(빌드때 재무·위험 섹션 등이 개조식으로 요약됨, 삼성 기준 약 10%). 요약 트랙은 이 takeaway를 [근거]로 이어붙이는데, LLM이 <b>근거 문장의 어미를 그대로 미러링</b>해 '~된다'체가 새어 나왔다(런마다 들쭉날쭉).</p>
     <p class="fix"><span class="lf">해결</span> <code>_PERSONA</code>에 <b>"근거가 어떤 문체여도 답변은 예외 없이 '~합니다/~입니다'체로 다시 쓰고, 근거 어미를 복사하지 마라"</b>를 명시. 재빌드 없이 런타임에서 문체를 강제 정규화 → Q1·Q2 반복 실행에서 '~된다' 0건으로 안정. <i>(한계: 말투는 자동 eval 어서션이 없어 회귀를 결정적으로 못 잡는다 — 알려진 eval 공백, 추적 항목.)</i></p>
   </div>
 
   <div class="tnote">
-    <p class="sym"><span class="num">11.</span>"주요 사업의 내용 요약"인데 엉뚱한 섹션(재무위험·주석)을 답한다 — 원하는 건 DX/DS/SDC/Harman 사업 개요</p>
+    <p class="sym"><span class="num">11.</span><span class="ts">2026-06-24 11:52</span>"주요 사업의 내용 요약"인데 엉뚱한 섹션(재무위험·주석)을 답한다 — 원하는 건 DX/DS/SDC/Harman 사업 개요</p>
     <p class="cause"><span class="lc">원인</span> 원하던 "I. 회사의 개요/II. 사업의 내용 > 사업의 개요" 요약은 <code>summary_&lt;corp&gt;</code>에 <b>분명히 존재</b>한다(DX/DS/SDC/Harman 포함). 그런데 <b>요약 트랙이 벡터 단독</b> 검색이라, "주요 사업의 내용"처럼 섹션 지정형 질의에 점수가 <b>0.41대로 평평</b>해 변별이 안 됐다 — 경영진단·재무제표 주석·위험관리 요약이 사업 개요를 눌러 상위를 차지(정작 사업 개요는 7위). corpus는 하이브리드인데 <b>요약 트랙만 BM25가 빠져</b> 있던 비대칭.</p>
     <p class="fix"><span class="lf">해결</span> <code>search_summaries</code>를 corpus와 동일하게 <b>하이브리드(벡터 ∪ BM25 → RRF)</b>로 전환(BM25 인덱스 빌더를 컬렉션 공용으로 일반화). BM25가 "주요 사업의 내용"→"사업의 개요"를 글자 일치로 끌어올려, 답변이 안정적으로 <b>DX/DS 부문 개요</b>로 시작(3회 모두 사업키워드 4개). 골든 16/16 회귀 0. <i>(잔여: 라우터가 "사업보고서 주요사업"식 필러를 섞으면 BM25가 희석되고 '주석'이 끼는 경우가 있어 쿼리 정제는 추가 개선 여지 — §15.)</i></p>
   </div>
