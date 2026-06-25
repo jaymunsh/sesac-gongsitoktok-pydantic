@@ -1071,8 +1071,8 @@ qa = (await qa_agent.run(prompt)).output</pre>
   <table>
     <tr><th>계층</th><th>무엇</th><th>비용</th><th>결과</th></tr>
     <tr><td><b>① 검색</b> (eval_retrieval)</td><td>정답 청크 회수율 hit@k·MRR — 표파싱·하이브리드·Contextual·<b>사업연도필터</b> 직접 측정</td><td><b>무료·결정적</b></td><td>must <b>13/13 hit@5(100%)</b>, MRR <b>0.933</b></td></tr>
-    <tr><td><b>② 행동</b> (eval_chat)</td><td>멀티턴·거시결합·표질의·되묻기·스코프(비교/도메인이탈)·숫자신선도</td><td>LLM</td><td><b>7/7 must + 2 watch</b></td></tr>
-    <tr><td><b>③ 회귀</b> (run_golden_inproc)</td><td>19케이스 회귀 스모크(인텐트·정확수치·스코프·기간·기수)</td><td>LLM</td><td><b>17/17 must + 2 watch</b></td></tr>
+    <tr><td><b>② 행동</b> (eval_chat)</td><td>멀티턴·거시결합·표질의·되묻기·스코프(비교/도메인이탈/투자질문)·숫자신선도</td><td>LLM</td><td><b>9/9 must + 2 watch</b></td></tr>
+    <tr><td><b>③ 회귀</b> (run_golden_inproc)</td><td>20케이스 회귀 스모크(인텐트·정확수치·스코프·기간·기수·회사명)</td><td>LLM</td><td><b>18/18 must + 2 watch</b></td></tr>
   </table>
   <ul>
     <li><b>검색 평가가 핵심</b>: LLM 없이 임베딩+BM25만 돌려 <b>공짜·결정적</b>으로 검색 품질을 격리 측정 → 재구축의 진짜 개선을 숫자로 증명. CI에서 매번 가능.</li>
@@ -1153,12 +1153,13 @@ def evaluate(case, resp):
     return (실패사유_없음, 실패사유목록)
 <span class="c"># 각 케이스를 handle_chat()에 직접 넣고 evaluate → PASS/FAIL/WATCH 집계 (서버 불필요)</span></pre>
 <pre><span class="c"># ③ 실제 실행 출력(발췌)</span>
-=== 챗 골든셋 18케이스 (인프로세스) ===
+=== 챗 골든셋 20케이스 (인프로세스) ===
   [<span class="g">PASS</span> ] ss-num-opincome        | 숫자 트랙 - 영업이익(RAG exact-match)
   [<span class="g">PASS</span> ] ss-summary-business    | 요약 트랙 - 사업 내용(서술)
   [<span class="g">PASS</span> ] ss-scope-other-company | 스코프 가드 - 다른 회사 질문
+  [<span class="g">PASS</span> ] hd-company-no-mention  | 회사명 환각 가드 - 타사명(삼성) 금지
   ...
---- 결과 ---   must : 16/16 통과   watch : 2/2 통과
+--- 결과 ---   must : 18/18 통과   watch : 2/2 통과
 ✅ must 전부 통과</pre>
   <p class="sub">→ 파일에 케이스를 한 줄 추가하면 바로 검증 대상이 된다. 미통과 시엔 사유(<code>intent=summary (기대 qa)</code> 등)가 함께 찍혀 디버깅이 쉽다.</p>
 
@@ -1166,14 +1167,14 @@ def evaluate(case, resp):
   <table>
     <tr><th>계층</th><th>케이스</th><th>결과</th></tr>
     <tr><td>① 검색</td><td>15 (must 13 / watch 2)</td><td><b>must 13/13 hit@5(100%) · MRR 0.933</b></td></tr>
-    <tr><td>② 행동</td><td>9 (must 7 / watch 2)</td><td><b>must 7/7 · watch 2/2</b></td></tr>
-    <tr><td>③ 회귀(골든)</td><td>19 (must 17 / watch 2)</td><td><b>must 17/17 · watch 2/2</b></td></tr>
+    <tr><td>② 행동</td><td>11 (must 9 / watch 2)</td><td><b>must 9/9 · watch 2/2</b></td></tr>
+    <tr><td>③ 회귀(골든)</td><td>20 (must 18 / watch 2)</td><td><b>must 18/18 · watch 2/2</b></td></tr>
   </table>
   <p class="sub">사전요약 트랙 도입 후에도 회귀 없음(요약 케이스 전부 통과). 상세는 <code>eval/EVAL_README.md</code>.</p>
 
   <h3>12-4. 전체 케이스 목록 (무엇을 검사했나)</h3>
-  <p>실제로 검사한 43개 케이스 전부. ✅=must 통과, 🔶=watch(알려진 약점·추적용).</p>
-  <p class="steptitle">① 회귀 골든 (chat_golden_set) — 19건 · must 17/17</p>
+  <p>실제로 검사한 46개 케이스 전부. ✅=must 통과, 🔶=watch(알려진 약점·추적용).</p>
+  <p class="steptitle">① 회귀 골든 (chat_golden_set) — 20건 · must 18/18</p>
   <table>
     <tr><th>케이스</th><th>질문</th><th>검사 포인트</th></tr>
     <tr><td>✅ ss-summary-overview</td><td>삼성 회사 개요 요약</td><td>intent=summary · verdict≠fail</td></tr>
@@ -1195,8 +1196,9 @@ def evaluate(case, resp):
     <tr><td>✅ ss-fy-summary</td><td>2023년 삼성 사업 내용 요약</td><td>요약 트랙도 사업연도 필터 존중·회귀 없음</td></tr>
     <tr><td>✅ ss-gisu-shares</td><td>제57기말 보통주 발행 주식총수</td><td>기수→사업연도 환산(삼성 제57기=2025) — 5,919,637,922</td></tr>
     <tr><td>✅ ss-gisu-56-opincome</td><td>삼성 제56기 영업이익</td><td>기수 코드변환 off-by-one 가드(제56기=2024) — 32,725,961</td></tr>
+    <tr><td>✅ hd-company-no-mention</td><td>(현대차 방) 영업이익·손익 수치 알려줘</td><td>회사명 환각 가드(#15) — 답에 타사명 "삼성" 금지(contains_none)</td></tr>
   </table>
-  <p class="steptitle">② 행동 (chat_eval_set) — 9건 · must 7/7</p>
+  <p class="steptitle">② 행동 (chat_eval_set) — 11건 · must 9/9</p>
   <table>
     <tr><th>케이스</th><th>질문</th><th>검사 포인트</th></tr>
     <tr><td>✅ multiturn-anaphora</td><td>(이전: 영업이익) "그럼 매출액은?"</td><td>멀티턴 — history로 생략 주어 해석, 숫자 답</td></tr>
@@ -1206,6 +1208,8 @@ def evaluate(case, resp):
     <tr><td>✅ smalltalk-thanks</td><td>오 고마워</td><td>intent=smalltalk · 근거 없음</td></tr>
     <tr><td>✅ scope-compare</td><td>삼성 vs SK하이닉스 비교</td><td>out_of_scope=true(비교 차단)</td></tr>
     <tr><td>✅ scope-offdomain</td><td>압구정역 맛집 알려줘</td><td>out_of_scope=true(공시·회사 무관 일반질문 차단)</td></tr>
+    <tr><td>✅ scope-stock-self</td><td>(긴 history) 삼성전자 주식 사도돼?</td><td>투자질문 차단 + detected_company가 자기회사 아님(None) — #16</td></tr>
+    <tr><td>✅ scope-stock-anaphora</td><td>(긴 history) 이 회사 주식 사도 돼?</td><td>'이 회사'=방 회사, history 타사 미유입(detected None) — #16</td></tr>
     <tr><td>🔶 clarify-ambiguous</td><td>삼성 이익 얼마야?</td><td>'이익' 모호 → 되묻기 유도(변동 허용)</td></tr>
     <tr><td>🔶 unanswerable-future</td><td>현대 내년 전망치</td><td>미래 전망 환각 대신 한계 밝히는지</td></tr>
   </table>
@@ -1272,7 +1276,7 @@ def evaluate(case, resp):
     <li><b>정확수치=재무결합</b> — "영업이익 얼마?" → DART 정형 API로 <b>43,601,051,000,000원</b> 정확 제시(+접수번호·DART 링크).</li>
     <li><b>거시결합</b> — "요즘 환율·금리 상황에서 실적 어때?" → <code>macroSnapshot</code>(환율·기준금리·국고채·KOSPI).</li>
     <li><b>정확도·provenance</b> — 모든 답에 근거 충실도 % + 출처 카드 + DART 원문 링크.</li>
-    <li><b>평가 수치</b> — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 17/17(19케이스).</li>
+    <li><b>평가 수치</b> — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 18/18(20케이스).</li>
     <li><b>API 절약 로직</b> — 모델 티어링·retrieve-then-read·정형API·캐시(§13)로 "왜 싸고 정확한지".</li>
     <li><b>X-Trace-Id + Logfire 콘솔</b> — 한 요청의 내부 추론(router→검색→writer→verifier) 타임라인 시연.</li>
     <li><b>스코프 가드</b> — 방 회사가 아닌/비교 질문 차단(out_of_scope) → 객관성·범위 통제.</li>
@@ -1458,10 +1462,22 @@ summary_top_k 8 · chroma_dir ./data/chroma · sqlite_path ./data/app.db</pre>
     <p class="cause"><span class="lc">원인</span> 라우터 LLM이 <code>detected_company</code>를 진짜 null이 아니라 <b>문자열 "null"</b>로 내보낼 때가 있다(비결정적). 그러면 코드의 <code>if r.detected_company:</code>가 "null"(문자열)을 <b>참</b>으로 봐서 "다른 회사" 분기로 가 <code>"이 방은 삼성전자 전용입니다. null 관련…"</code>을 만들고, 프론트 삼항(<code>detectedCompany ? … : ''</code>)도 truthy라 "(감지된 기업: null)"을 노출. <i>(전 스택 추적: Spring·React엔 이 템플릿이 없음 → 따옴표 없는 형태로 보아 -pydantic이 생성. Python None이었으면 안 났을 것.)</i></p>
     <p class="fix"><span class="lf">해결</span> 라우터 직후 <code>_clean_company()</code>로 <b>"null"·"none"·""·"없음" 등을 진짜 None으로 정규화</b>. → off-domain은 올바른 안내("저는 삼성전자의 공시·재무 분석 어시스턴트입니다…")가 나가고 <code>detectedCompany=null</code>이 내려가 프론트도 깔끔. <i>교훈: LLM의 구조화 출력이라도 'null 문자열' 같은 더러운 값을 코드가 정규화해야 한다. (프론트도 answerText를 쓰면 이중 안전)</i></p>
   </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">15.</span><span class="ts">2026-06-25 14:39</span>현대자동차 방인데 답이 "삼성전자 영업이익은…"으로 시작한다 — 수치는 현대차 정답인데 회사명만 타사로 바뀜(간헐적)</p>
+    <p class="cause"><span class="lc">원인</span> writer(<code>qa_agent</code>)·<code>summary_agent</code>에 넘기는 프롬프트가 <code>[질문]+[근거]</code>뿐 — <b>방 회사명(<code>company_name</code>)이 안 들어간다</b>(라우터만 <code>[방 회사]</code>를 받음). 그런데 QA 지시는 "<code>&lt;회사&gt; &lt;항목&gt;은 …입니다</code>"로 시작하라고 요구한다. 질문에 회사명이 없으면("영업이익… 알려줘") writer가 회사를 <b>추측</b>해야 하고, 하필 QA 프롬프트의 예시 숫자(<code>43,601,051</code>/<code>300,870,903</code>)가 전부 삼성 값이라 <b>삼성으로 편향</b>됐다. 근거 report_nm은 현대차라 수치는 맞게 나오고 이름만 틀린다.</p>
+    <p class="fix"><span class="lf">해결</span> writer·summary 프롬프트에 <code>[회사] {company_name}</code>을 <b>명시·권위적으로 주입</b>하고, "[근거]에 다른 회사가 보이거나 질문에 회사명이 없어도 <b>방 회사명만 쓰고 타사명 추측 금지</b>"를 두 에이전트 지시에 추가. 골든에 <code>hd-company-no-mention</code>(회사명 없는 현대차 질문 → 답에 "삼성" 금지, <code>contains_none</code>) 가드를 넣어 회귀를 잠갔다. 검색 13/13·골든 18/18·행동 7/7 회귀 0. <i>교훈: 회사명 같은 권위 식별자는 LLM에 추측시키지 말고 코드가 프롬프트에 박는다(#13 기수·#14 null과 같은 결).</i></p>
+  </div>
+
+  <div class="tnote">
+    <p class="sym"><span class="num">16.</span><span class="ts">2026-06-25 15:30</span>"이 회사 주식 지금 사도 돼?" 같은 투자 질문에 "(감지된 기업: 삼성전자)" 또는 "(감지된 기업: 현대자동차)"가 붙는다 — 대화가 길어지면 발생</p>
+    <p class="cause"><span class="lc">원인</span> out_of_scope 응답의 <code>detected_company</code>가 두 가지로 오염된다(비결정적). ① <b>방 회사 자신</b>이 detected로 나온다(삼성 방에서 "삼성전자" 감지 — 논리상 detected는 '다른 회사'만 의미하므로 불가). ② 현재 질문엔 없는데 <b>이전 대화(history)의 타사</b>를 끌어온다(삼성 방에서 "이 회사 주식…"에 history의 "현대자동차"를 감지). 라우터(LLM)가 긴 맥락·자기참조 지시어에 흔들린 결과다. <i>(빈 history면 정상, 긴 history에서 3회 중 1~2회 재현.)</i></p>
+    <p class="fix"><span class="lf">해결</span> 라우터 직후 <code>_scrub_detected()</code>로 <b>코드가 결정적으로 정리</b>한다: 감지명이 방 회사명과 같으면(공백·법인격 접미사 제거 후 비교) <code>None</code>, 감지명이 <b>현재 질문 본문에 (부분조차) 나타나지 않으면</b> history 잔향으로 보고 <code>None</code>. 라우터 지시에도 "방 회사는 detected가 될 수 없음 · '이 회사/그 회사'는 방 회사 · history에만 있는 회사 끌어오기 금지 · 주식 매수/매도·투자 판단은 off-domain(detected=null)"을 명시. 행동 eval에 긴 history를 붙인 <code>scope-stock-self</code>·<code>scope-stock-anaphora</code>(<code>detected_none</code> 어서션) 가드 추가 → 3×반복 모두 None, 진짜 타사(SK하이닉스)는 유지. <i>교훈: 식별자 위생은 LLM 판단에만 맡기지 말고 코드가 최종 정규화한다(#14 null·#15 회사명과 같은 결). 프론트가 answerText를 쓰면 이중 안전.</i></p>
+  </div>
   </details>
 
   <div class="callout warn"><b>알아둘 점 — 코드는 정상, 미처리 버그 아님</b><br>
-    위 1~8번은 <b>전부 수정·검증 완료(회귀 0)</b>다. 아래는 코드 결함이 아니라 <b>운영 시 참고할 점·설계상 graceful 한계</b>로, 정상 동작을 막지 않는다.
+    위 1~16번은 <b>전부 수정·검증 완료(회귀 0)</b>다. 아래는 코드 결함이 아니라 <b>운영 시 참고할 점·설계상 graceful 한계</b>로, 정상 동작을 막지 않는다.
     <ul style="margin:8px 0 0;padding-left:18px">
       <li><b>⚙️ 운영 행동</b> — 메타 마이그레이션을 적용할 땐 <b>uvicorn 1회 재시작</b>이 필요하다(떠 있던 서버는 BM25 인메모리 캐시가 옛 메타를 들고 있음; 새로 띄우거나 eval은 자동 반영). <i>버그가 아니라 배포 절차.</i></li>
       <li><b>🟢 현재 무해</b> — <code>bsns_year=0</code>(연도 미상)이 <code>$lte</code>-only 필터에 섞일 이론적 여지가 있으나, 현재 데이터는 미상 0건이라 발생하지 않는다(추적만).</li>

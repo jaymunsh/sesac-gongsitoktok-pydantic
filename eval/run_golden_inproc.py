@@ -46,6 +46,10 @@ def evaluate(case: dict, resp) -> tuple[bool, list[str]]:
             reasons.append(f"verdict={v} (금지)")
     if "contains_any" in exp and not any(s in text for s in exp["contains_any"]):
         reasons.append(f"contains_any 미충족 {exp['contains_any']}")
+    if "contains_none" in exp:
+        hit = [s for s in exp["contains_none"] if s in text]
+        if hit:
+            reasons.append(f"금지어 포함 {hit}")
     if exp.get("has_number") and not NUM_RE.search(text):
         reasons.append("숫자 토큰 없음")
     if resp.error:

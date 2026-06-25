@@ -329,6 +329,25 @@
       "note": "기수→사업연도 매핑(라우터 앵커) 회귀 가드(트러블슈팅 #9). 제57기말 유통주식수 5,919,637,922(2025)"
     },
     {
+      "id": "hd-company-no-mention",
+      "company": {
+        "corpCode": "00164742",
+        "corpName": "현대자동차"
+      },
+      "question": "영업이익, 영업손익, 손익 관련 수치를 알려줘",
+      "behavior": "회사명 환각 가드 - 회사명 없는 질문에 방 회사(현대차) 근거로 답하되 타사명(삼성) 금지(#15)",
+      "expect": {
+        "intent": "qa",
+        "has_number": true,
+        "contains_none": [
+          "삼성"
+        ],
+        "verdict_not": "fail"
+      },
+      "severity": "must",
+      "note": "writer가 회사명을 추측해 '삼성전자 영업이익은…'으로 환각하던 버그 가드(#15). 방 회사명을 프롬프트에 명시 주입 → 타사명 금지"
+    },
+    {
       "id": "ss-gisu-56-opincome",
       "company": {
         "corpCode": "00126380",

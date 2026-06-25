@@ -810,8 +810,8 @@ qa = (await qa_agent.run(prompt)).output    # 모듈 1회 정의·재사용, 호
 | 계층 | 무엇 | 비용 | 결과 |
 |---|---|---|---|
 | **① 검색** (`eval_retrieval.py`) | 정답 청크 회수율 hit@k·MRR — 표파싱·하이브리드·Contextual·**날짜필터** 직접 측정 | **무료·결정적**(LLM 없음) | must **13/13 hit@5(100%)**, MRR **0.933** |
-| **② 행동** (`eval_chat.py`) | 멀티턴·거시결합·표질의·되묻기·스코프비교·숫자신선도 | LLM | **6/6 must + 2 watch** |
-| **③ 회귀** (`run_golden_inproc.py`) | 15케이스 회귀 스모크(인텐트·정확수치·스코프·**기간**) | LLM | **13/13 must + 2 watch** |
+| **② 행동** (`eval_chat.py`) | 멀티턴·거시결합·표질의·되묻기·스코프(비교/도메인이탈/투자질문)·숫자신선도 | LLM | **9/9 must + 2 watch** |
+| **③ 회귀** (`run_golden_inproc.py`) | 20케이스 회귀 스모크(인텐트·정확수치·스코프·**기간**·기수·회사명) | LLM | **18/18 must + 2 watch** |
 
 - **검색 평가**가 핵심: LLM 없이 임베딩+BM25만 돌려 **공짜·결정적**으로 검색 품질을 격리 측정 →
   재구축의 진짜 개선을 숫자로 증명. CI에서 매번 돌릴 수 있다.
@@ -883,11 +883,12 @@ def evaluate(case, resp):
 ```
 ```text
 # ③ 실제 실행 출력(발췌)
-=== 챗 골든셋 15케이스 (인프로세스) ===
+=== 챗 골든셋 20케이스 (인프로세스) ===
   [PASS ] ss-num-opincome        | 숫자 트랙 - 영업이익(RAG exact-match)
   [PASS ] ss-scope-other-company | 스코프 가드 - 다른 회사 질문
+  [PASS ] hd-company-no-mention  | 회사명 환각 가드 - 타사명(삼성) 금지
   ...
---- 결과 ---   must : 13/13 통과   watch : 2/2 통과
+--- 결과 ---   must : 18/18 통과   watch : 2/2 통과
 ✅ must 전부 통과
 ```
 → 파일에 케이스 한 줄 추가하면 바로 검증 대상. 미통과 시 사유(`intent=summary (기대 qa)` 등)가 함께 찍혀 디버깅 쉬움.
@@ -896,17 +897,17 @@ def evaluate(case, resp):
 | 계층 | 케이스 | 결과 |
 |---|---|---|
 | ① 검색 | 15 (must 13 / watch 2) | **must 13/13 hit@5(100%) · MRR 0.933** |
-| ② 행동 | 9 (must 7 / watch 2) | **must 7/7 · watch 2/2** |
-| ③ 회귀(골든) | 19 (must 17 / watch 2) | **must 17/17 · watch 2/2** |
+| ② 행동 | 11 (must 9 / watch 2) | **must 9/9 · watch 2/2** |
+| ③ 회귀(골든) | 20 (must 18 / watch 2) | **must 18/18 · watch 2/2** |
 
 사전요약 트랙 도입 후에도 회귀 없음(요약 케이스 전부 통과). 상세는 `eval/EVAL_README.md`.
 
 **측정 방법 (코드 기준)**: `intent`=정확 일치 · `contains_any`=answer+모든 citation.quote 텍스트에 부분문자열 포함 · `has_number`=정규식 `\d{1,3}(,\d{3})+` · `verdict_not`=verdict(=grounded_score 임계값 0.7/0.4로 도출)가 금지값이면 실패 · `out_of_scope`/`macro_used`/`needs_clarification`=불리언 플래그 · `no_citations`=citations 길이 0 · 검색 `expect_any`=top-k의 (section_title+quote)에 첫 등장 순위 → `1/순위`로 MRR. **집계**: must 전부 통과 시 종료코드 0(CI), watch는 분리.
 
 ### 12-4. 전체 케이스 목록 (무엇을 검사했나)
-실제 검사한 43개 케이스 전부. ✅=must 통과, 🔶=watch(약점·추적용).
+실제 검사한 46개 케이스 전부. ✅=must 통과, 🔶=watch(약점·추적용).
 
-**① 회귀 골든 — 19건 · must 17/17**
+**① 회귀 골든 — 20건 · must 18/18**
 
 | 케이스 | 질문 | 검사 포인트 |
 |---|---|---|
@@ -929,8 +930,9 @@ def evaluate(case, resp):
 | ✅ ss-fy-summary | 2023년 삼성전자 사업 내용 요약 | 요약 트랙도 사업연도 필터 존중·회귀 없음 |
 | ✅ ss-gisu-shares | 제57기말 기준 보통주 발행 주식총수 | 기수→사업연도 환산(삼성 제57기=2025) — 5,919,637,922 |
 | ✅ ss-gisu-56-opincome | 삼성 제56기 영업이익 | 기수 코드변환 off-by-one 가드(제56기=2024) — 32,725,961 |
+| ✅ hd-company-no-mention | (현대차 방) 영업이익·손익 수치 알려줘 | 회사명 환각 가드(#15) — 답에 타사명 "삼성" 금지(`contains_none`) |
 
-**② 행동 — 9건 · must 7/7**
+**② 행동 — 11건 · must 9/9**
 
 | 케이스 | 질문 | 검사 포인트 |
 |---|---|---|
@@ -941,6 +943,8 @@ def evaluate(case, resp):
 | ✅ smalltalk-thanks | 오 고마워 | intent=smalltalk·근거없음 |
 | ✅ scope-compare | 삼성 vs SK하이닉스 비교 | out_of_scope=true |
 | ✅ scope-offdomain | 압구정역 맛집 알려줘 | 공시·회사 무관 일반질문 차단(out_of_scope) |
+| ✅ scope-stock-self | (긴 history) 삼성전자 주식 사도돼? | 투자질문 차단 + detected_company가 자기회사 아님(None) — #16 |
+| ✅ scope-stock-anaphora | (긴 history) 이 회사 주식 사도 돼? | '이 회사'=방 회사, history 타사 미유입(detected None) — #16 |
 | 🔶 clarify-ambiguous | 삼성 이익 얼마야? | '이익' 모호 → 되묻기(변동 허용) |
 | 🔶 unanswerable-future | 현대 내년 전망치 | 미래 전망 환각 대신 한계 |
 
@@ -984,6 +988,8 @@ def evaluate(case, resp):
 | 요약이 **엉뚱한 섹션**(재무위험·주석) 응답 — 원하는 건 사업 개요 | 요약 트랙이 **벡터 단독**이라 "주요 사업의 내용" 섹션질의에 점수 평평(0.41대) | `search_summaries`를 **하이브리드(벡터∪BM25 RRF)**로 — corpus와 동일. **교훈: 트랙 간 검색 방식도 일관되게** |
 | 회사·공시와 **무관한 질문**("압구정역 맛집")에 그냥 답함 | out_of_scope가 **'다른 회사'만** 막고, 도메인 이탈은 smalltalk로 분류돼 일반지식으로 답 | 라우터 out_of_scope에 **③ 도메인 이탈** 추가 + smalltalk을 인사로 한정. 응답을 '다른 회사 vs 도메인 이탈'로 분기. **교훈: 스코프 가드는 도메인 이탈까지** |
 | off-domain 거절에 **"null" 노출**(화면 "(감지된 기업: null)", DB "…null 관련…") | 라우터 LLM이 `detected_company`를 **문자열 "null"**로 내보낼 때 `if r.detected_company:`가 참으로 판정 → "다른 회사" 분기. 프론트 삼항도 truthy | 라우터 직후 `_clean_company()`로 "null"·"none"·""·"없음"을 **진짜 None으로 정규화**. **교훈: LLM 구조화 출력의 'null 문자열' 등 더러운 값은 코드가 정규화** |
+| 현대차 방인데 답이 **"삼성전자 영업이익은…"** (회사명만 타사로 환각, 수치는 현대차 정답) | writer·summary 프롬프트에 **방 회사명 미전달**(라우터만 받음). "`<회사> <항목>은…`"으로 시작하라 지시받지만 질문에 회사명 없으면 추측 → QA 프롬프트 예시 숫자가 전부 삼성이라 **삼성으로 편향** | writer·summary 프롬프트에 `[회사] {company_name}` **명시 주입** + "[근거]에 타사가 보여도 **방 회사명만 쓰고 추측 금지**" 지시. 골든에 `hd-company-no-mention`(타사명 금지 `contains_none`) 가드 추가. **교훈: 권위 식별자(회사명)는 추측시키지 말고 코드가 프롬프트에 박는다** |
+| 투자질문("이 회사 주식 사도돼?")에 **"(감지된 기업: 삼성전자/현대자동차)"** 노출 — 대화가 길어지면 발생 | out_of_scope의 `detected_company`가 ① **방 회사 자신**이 되거나(논리상 불가) ② 현재 질문엔 없는 **history의 타사**를 끌어옴(비결정적). 라우터가 긴 맥락·자기참조에 흔들림 | 라우터 직후 `_scrub_detected()`로 **결정적 정리**: 감지명이 방 회사와 같으면(정규화 비교) None, 현재 **질문 본문에 안 나타나면**(history 잔향) None. 라우터엔 "방 회사는 detected 불가·'이 회사'=방 회사·history 회사 끌어오기 금지·투자조언은 off-domain" 명시. 행동 eval에 `scope-stock-self`·`scope-stock-anaphora`(긴 history + `detected_none`) 가드 추가. **교훈: 식별자 위생은 LLM 판단에만 맡기지 말고 코드가 최종 정규화(#14·#15와 같은 결)** |
 
 > 위 답변튜닝 이력(기수·말투·요약·스코프)은 가독성 버전(HTML 설명서)의 **§17 트러블슈팅**에 카드·수정 일시와 함께 정리돼 있다. 단독 기록: `docs/세션_문제점_정리.md`·`docs/기간질의_버그수정_개발일지.md`.
 
@@ -1015,7 +1021,7 @@ def evaluate(case, resp):
 3. **정확수치 = 재무결합** — "영업이익 얼마?" → DART 정형 API로 **43,601,051,000,000원** 정확 제시(+출처 접수번호·DART 링크).
 4. **거시결합** — "요즘 환율·금리 상황에서 실적 어때?" → `macroSnapshot`(환율·기준금리·국고채·KOSPI) 결합.
 5. **정확도(groundedScore)·provenance** — 모든 답에 근거 충실도 % + 출처 카드(접수번호·섹션·인용) + DART 원문 링크.
-6. **평가 수치** — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 17/17(19케이스).
+6. **평가 수치** — 검색 must 13/13 hit@5(100%)·MRR 0.933, 회귀 골든 must 18/18(20케이스).
 7. **API 절약 로직** — 모델 티어링·retrieve-then-read·정형API·캐시(§13)로 "왜 싸고 정확한지" 설명.
 8. **X-Trace-Id 추적 + Logfire 콘솔** — 한 요청의 내부 추론(router→검색→writer→verifier) 타임라인을 trace로 시연.
 9. **스코프 가드** — 방 회사가 아닌/비교 질문을 차단(out_of_scope) → 객관성·범위 통제.

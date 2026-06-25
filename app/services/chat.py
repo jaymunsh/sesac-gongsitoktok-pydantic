@@ -144,6 +144,7 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
     r = (await router_agent.run(_router_prompt(req))).output
     _apply_gisu(req, r)  # '제N기' → 사업연도 date를 코드가 결정적으로 확정(LLM 산수 불신)
     r.detected_company = _clean_company(r.detected_company)  # 문자열 'null'/'none' → 진짜 None(#14)
+    r.detected_company = _scrub_detected(r.detected_company, req)  # 자기회사·history 오염 제거(#16)
 
     if r.intent == ChatIntent.SMALLTALK:
         return ChatResponse(
@@ -186,12 +187,16 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
     verification: VerificationResult | None = None
     if r.intent == ChatIntent.SUMMARY:
         out: SummaryResult = (
-            await summary_agent.run(f"[질문]\n{req.question}\n\n[근거]\n{evidence}")
+            await summary_agent.run(
+                f"[회사] {req.company_name}\n[질문]\n{req.question}\n\n[근거]\n{evidence}"
+            )
         ).output
         answer = out.summary
     else:  # QA
         qa: QAResult = (
-            await qa_agent.run(f"[질문]\n{req.question}\n\n[근거]\n{evidence}")
+            await qa_agent.run(
+                f"[회사] {req.company_name}\n[질문]\n{req.question}\n\n[근거]\n{evidence}"
+            )
         ).output
         answer = qa.answer
 
@@ -253,6 +258,31 @@ def _clean_company(v: str | None) -> str | None:
         return None
     s = str(v).strip()
     return None if (not s or s.lower() in _NULLISH) else s
+
+
+def _norm_company(s: str) -> str:
+    """회사명 정규화 — 공백·법인격 접미사 제거 후 소문자."""
+    return re.sub(r"\s|주식회사|㈜|\(주\)", "", s).lower()
+
+
+def _scrub_detected(detected: str | None, req: ChatRequest) -> str | None:
+    """`detected_company`의 두 오염을 코드가 결정적으로 제거(트러블슈팅 #16).
+
+    ① **자기 회사**: 라우터가 방 회사 자신을 detected로 내보내는 경우(논리상 불가 —
+       detected는 '다른 회사'만 의미). 정규화 비교로 같으면 None.
+    ② **history 오염**: 대화가 길어지면 라우터가 **현재 질문엔 없는** 과거 대화의 회사를
+       끌어온다(예: 삼성 방에서 '이 회사 주식 사도돼?'에 '현대자동차'). 감지된 회사명이
+       현재 질문 본문에 (부분이라도) 나타나지 않으면 환각·history 잔향으로 보고 None.
+    """
+    if not detected:
+        return None
+    nd, nroom = _norm_company(detected), _norm_company(req.company_name)
+    if nd == nroom or nd in nroom or nroom in nd:  # ① 자기 회사
+        return None
+    nq = _norm_company(req.question)
+    if nd not in nq:  # ② 현재 질문에 근거 없음(history 잔향)
+        return None
+    return detected
 
 
 def _router_prompt(req: ChatRequest) -> str:

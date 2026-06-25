@@ -48,6 +48,8 @@ def evaluate(case: dict, resp) -> tuple[bool, list[str]]:
         why.append("needs_clarification=false")
     if exp.get("no_citations") and resp.citations:
         why.append(f"citations={len(resp.citations)}(0 기대)")
+    if exp.get("detected_none") and resp.detected_company:
+        why.append(f"detected_company={resp.detected_company!r}(None 기대)")
     return (not why), why
 
 

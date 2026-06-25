@@ -161,6 +161,48 @@
         "out_of_scope": true
       },
       "severity": "must"
+    },
+    {
+      "id": "scope-stock-self",
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
+      "question": "삼성전자 주식 지금 사도돼?",
+      "history": [
+        {"role": "user", "content": "삼성전자 매출 알려줘"},
+        {"role": "assistant", "content": "삼성전자 매출은 300,870,903백만원입니다."},
+        {"role": "user", "content": "현대자동차랑 비교하면?"},
+        {"role": "assistant", "content": "현대자동차 관련 질문은 해당 방에서 해주세요."},
+        {"role": "user", "content": "영업이익은?"},
+        {"role": "assistant", "content": "삼성전자 영업이익은 43,601,051백만원입니다."}
+      ],
+      "behavior": "스코프 가드(#16) - 자기회사 투자조언은 out_of_scope이되 detected_company는 자기회사가 될 수 없음(None)",
+      "expect": {
+        "out_of_scope": true,
+        "detected_none": true
+      },
+      "severity": "must"
+    },
+    {
+      "id": "scope-stock-anaphora",
+      "company": {
+        "corpCode": "00126380",
+        "corpName": "삼성전자"
+      },
+      "question": "이 회사 주식 지금 사도 돼?",
+      "history": [
+        {"role": "user", "content": "삼성전자 매출 알려줘"},
+        {"role": "assistant", "content": "삼성전자 매출은 300,870,903백만원입니다."},
+        {"role": "user", "content": "현대자동차랑 비교하면?"},
+        {"role": "assistant", "content": "현대자동차 관련 질문은 해당 방에서 해주세요."}
+      ],
+      "behavior": "스코프 가드(#16) - 지시어('이 회사')는 방 회사. history의 현대차를 detected로 끌어오지 않음(None)",
+      "expect": {
+        "out_of_scope": true,
+        "detected_none": true
+      },
+      "severity": "must"
     }
   ]
 }
