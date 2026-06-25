@@ -143,6 +143,7 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
     # 1) 라우팅
     r = (await router_agent.run(_router_prompt(req))).output
     _apply_gisu(req, r)  # '제N기' → 사업연도 date를 코드가 결정적으로 확정(LLM 산수 불신)
+    r.detected_company = _clean_company(r.detected_company)  # 문자열 'null'/'none' → 진짜 None(#14)
 
     if r.intent == ChatIntent.SMALLTALK:
         return ChatResponse(
@@ -237,6 +238,21 @@ def _apply_gisu(req: ChatRequest, r: RouterResult) -> None:
     g0, y0 = anchor
     years = [y0 + (n - g0) for n in nums]
     r.date_from, r.date_to = f"{min(years)}0101", f"{max(years)}1231"
+
+
+_NULLISH = {"null", "none", "n/a", "na", "없음", "-", "nan"}
+
+
+def _clean_company(v: str | None) -> str | None:
+    """LLM이 detected_company를 **문자열 'null'/'none'/''** 으로 내보내는 경우를 진짜 None으로 정규화.
+
+    안 하면 `if r.detected_company:`가 'null'(문자열)을 참으로 봐서 '이 방은 … null 관련 …'
+    같은 답을 만들고, 프론트도 '(감지된 기업: null)'을 노출한다(트러블슈팅 #14).
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    return None if (not s or s.lower() in _NULLISH) else s
 
 
 def _router_prompt(req: ChatRequest) -> str:
