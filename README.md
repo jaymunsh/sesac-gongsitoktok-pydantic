@@ -95,12 +95,23 @@ data/                    # chroma/ · app.db · corpcode.json (이미 구축됨)
 
 ## 실행
 
+**사전 요구사항**
+
+| 항목 | 버전 | 비고 |
+|---|---|---|
+| Python | **3.12** | `.venv` 가상환경 권장 |
+| OpenAI API 키 | — | 답 작성·검증·임베딩. [platform.openai.com](https://platform.openai.com) |
+| OpenDART API 키 | — | 주 데이터(공시). [opendart.fss.or.kr](https://opendart.fss.or.kr) 무료 즉시 발급 |
+| 한국은행 ECOS 키 | — | 보조(환율·금리). [ecos.bok.or.kr](https://ecos.bok.or.kr) 무료 |
+
 ```bash
 # 1) 가상환경 + 의존성
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2) .env 설정 (OPENAI_API_KEY, DART_API_KEY 등)
+# 2) 환경변수 — .env.example 복사 후 키 채우기 (전체 키·설명은 .env.example 참조)
+cp .env.example .env
+#    필수: OPENAI_API_KEY · DART_API_KEY · ECOS_API_KEY
 
 # 3) 서버 기동 (실서버 포트 8000)
 uvicorn app.main:app --reload --port 8000
@@ -138,7 +149,7 @@ PYTHONPATH=. .venv/bin/python -m eval.eval_chat
 PYTHONPATH=. .venv/bin/python -m eval.run_golden_inproc
 ```
 
-현재 기준선: **검색 13/13 (MRR 0.933) · 행동 7/7 · 골든 17/17(must).**
+현재 기준선(2026-06-25 실측): **검색 must 13/13 (MRR 0.933) · 행동 must 9/9 · 골든 must 18/18.** 케이스별 결과·재현 명령은 [`eval/EVAL_RESULTS.md`](eval/EVAL_RESULTS.md) 참조.
 
 ---
 

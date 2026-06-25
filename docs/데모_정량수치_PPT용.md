@@ -1,7 +1,7 @@
 # 공시톡톡 AI — 데모용 정량 수치 모음 (PPT용)
 
 > 발표 슬라이드에 바로 옮길 수 있게, **이상적인 질문 + 실측 수치**를 표 중심으로 정리했다.
-> 수치는 전부 실제 eval/실행 관측값(`eval_retrieval`·`run_golden_inproc`·`handle_chat`). 측정 기준일 2026-06-24.
+> 수치는 전부 실제 eval/실행 관측값(`eval_retrieval`·`run_golden_inproc`·`handle_chat`). 측정 기준일 2026-06-25. 케이스별 원본 결과는 [`../eval/EVAL_RESULTS.md`](../eval/EVAL_RESULTS.md).
 
 ---
 
@@ -11,8 +11,8 @@
 |---|---|---|
 | **검색 품질** | hit@1 / hit@3 / hit@5 | **85% / 100% / 100%** (must 13건) |
 | | MRR (정답 순위 역수 평균) | **0.933** |
-| **답변 행동** | 어려운 케이스 통과 | **6/6 must** |
-| **회귀(골든)** | 인텐트·정확수치·스코프·기간·기수 | **16/16 must** |
+| **답변 행동** | 어려운 케이스 통과 | **9/9 must** |
+| **회귀(골든)** | 인텐트·정확수치·스코프·기간·기수 | **18/18 must** |
 | **답변 정확도** | groundedScore (근거 충실도) | 정확수치 답변 **≈1.0 (verdict=pass)** |
 | **데이터 규모** | corpus 청크 / 사전요약 | **67,023 / 1,188** |
 
@@ -39,7 +39,7 @@
 |---|---|---|---|
 | **A. 검색 품질** | hit@k · **MRR** · (NDCG) | ✅ hit@1/3/5 · MRR | NDCG·RAGAS context recall은 미측정(2개사 데모엔 과함) |
 | **B. 답변 품질** | **groundedness**(환각↓) · 정확도(exact-match) · answer relevance | ✅ groundedScore · verdict · 정확수치 일치 | RAGAS류 정밀지표 미도입 |
-| **C. 회귀/커버리지** | pass rate | ✅ 골든 16/16 · 행동 6/6 · 검색 13/13 | CI로 매번 |
+| **C. 회귀/커버리지** | pass rate | ✅ 골든 18/18 · 행동 9/9 · 검색 13/13 | CI로 매번 |
 | **D. 운영** | latency · cost/token | △ 정성(질문당 ~$0.02–0.05) | 정밀 벤치 미실시 |
 
 → **A·B·C 충실, D 정성.** "검색(hit@k·MRR) + 답변(groundedness) + 회귀(pass rate)" 세 축을 갖춘 게 한 장 정량 성능의 표준 골격.
