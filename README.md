@@ -144,7 +144,7 @@ PYTHONPATH=. .venv/bin/python -m eval.run_golden_inproc
 
 ## 문서
 
-- **`docs/AI_프로젝트_종합설명.md`** / **`docs/AI_프로젝트_종합설명서.html`** — 설계·파이프라인·트러블슈팅의
+- **`docs/AI_프로젝트_종합설명.md`** / **`docs/agent_mvp2.0.html`** — 설계·파이프라인·트러블슈팅의
   source of truth. HTML §17에 트러블슈팅 14건(증상/원인/해결·시각 배지)이 정리돼 있다.
 - `docs/데모_정량수치_PPT용.md` — 정량 성능(hit@k·MRR·groundedScore) 요약.
 - `docs/mermaid/` — 파이프라인 다이어그램 PNG.
